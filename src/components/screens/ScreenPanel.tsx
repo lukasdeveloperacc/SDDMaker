@@ -69,6 +69,7 @@ export function ScreenPanel({
     missing: string[];
   } | null>(null);
   const [feedback, setFeedback] = useState('');
+  const [designMd, setDesignMd] = useState('');
   // 전체 HTML 편집 창의 내용. null이면 편집 중이 아니다. 닫아도 남아 있으면 "저장 안 한 변경"이다.
   const [draft, setDraft] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -167,11 +168,23 @@ export function ScreenPanel({
   }
 
   const gate = doc.generate;
+  async function saveDesign() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api('PUT', `/api/projects/${projectId}/design`, { designMd });
+      await refresh();
+    } catch (error) {
+      setMsg(errorOf(error));
+    } finally {
+      setBusy(false);
+    }
+  }
   const gateNotice = !gate.ok && (
     <Notice tone="warn">
       {gate.code === 'design_required' ? (
         <p className="notice-body">
-          {REASON_KO.design_required} 프로젝트 디자인 문서를 먼저 넣으세요. 프로젝트 화면의 디자인 항목에서 넣을 수 있습니다.
+          {REASON_KO.design_required}
         </p>
       ) : (
         <p className="notice-body">{gate.reason}</p>
@@ -226,6 +239,12 @@ export function ScreenPanel({
       {doc.status === 'empty' && (
         <div className="stack">
           {gateNotice}
+          {!gate.ok && gate.code === 'design_required' && (
+            <form className="stack" onSubmit={(event) => { event.preventDefault(); void saveDesign(); }}>
+              <TextArea label="디자인 문서" value={designMd} onChange={(event) => setDesignMd(event.target.value)} disabled={locked} />
+              <div><Button type="submit" variant="secondary" disabled={locked || !designMd.trim()}>저장</Button></div>
+            </form>
+          )}
           {generatorBlock}
           <Button variant="primary" disabled={locked || !gate.ok} onClick={() => void generate()}>
             화면 생성

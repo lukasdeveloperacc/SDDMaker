@@ -2,7 +2,7 @@
 import { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentPicker } from '@/components/AgentPicker';
+import { AgentConnections } from '@/components/AgentConnections';
 import type { AgentName } from '@/lib/contract';
 
 vi.mock('@/components/AgentTerminal', () => ({
@@ -34,8 +34,9 @@ function button(text: string, index = 0) {
   if (!el) throw new Error(`버튼 없음: ${text}`);
   return el;
 }
-async function render(agent: AgentName = 'claude') {
-  await act(async () => root.render(createElement(AgentPicker, { value: agent, onChange: () => {} })));
+async function render(terminal = true) {
+  await act(async () => root.render(createElement(AgentConnections)));
+  if (terminal) await act(async () => button('터미널').click());
 }
 async function connect(agent: AgentName = 'claude') {
   await act(async () => button('계정 연결', agent === 'claude' ? 0 : 1).click());
@@ -85,7 +86,7 @@ afterEach(async () => {
 
 describe('에이전트 로그인 터미널', () => {
   it.each(['claude', 'codex'] as const)('%s는 PTY 연결을 요청하고 ANSI 출력과 입력 세션을 터미널에 전달한다', async (agent) => {
-    await render(agent);
+    await render();
     await connect(agent);
     expect(requests.find((r) => r.method === 'POST')).toEqual({ url: `/api/agents/${agent}/login`, method: 'POST', body: JSON.stringify({ terminal: true }) });
     const output = '\x1b[32mPTY login\x1b[0m\r\n<script>plain text</script>';
@@ -209,5 +210,73 @@ describe('에이전트 로그인 터미널', () => {
     expect(terminal.getAttribute('data-login-id')).toBe('new-session');
     expect(terminal.textContent).toBe('new output');
     expect(terminal.getAttribute('data-running')).toBe('true');
+  });
+});
+
+describe('간편 로그인 탭', () => {
+  it('Claude는 브라우저 인증과 인증 코드 입력을 제공하고 현재 세션으로 코드를 보낸다', async () => {
+    await render(false);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('간편 로그인');
+    expect(container.querySelector('input[type="radio"]')).toBeNull();
+    await connect();
+    expect(requests.find((r) => r.method === 'POST')?.body).toBe(JSON.stringify({ terminal: false }));
+    expect(button('터미널').disabled).toBe(true);
+    await act(async () => {
+      emit('prompt', { url: 'https://claude.ai/oauth/authorize?state=test' });
+      emit('input_ready', { loginId: 'guided-claude-session' });
+      emit('output', { text: 'CLI output stays out of guided view' });
+    });
+    expect(container.querySelector('a.btn-primary')?.getAttribute('href')).toBe('https://claude.ai/oauth/authorize?state=test');
+    expect(container.querySelector('[data-testid="terminal"]')).toBeNull();
+    expect(container.textContent).not.toContain('CLI output stays out');
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'authorization#state');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(button('연결 완료').disabled).toBe(false);
+    await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(requests.find((r) => r.method === 'PUT')).toEqual({ url: '/api/agents/claude/login', method: 'PUT', body: JSON.stringify({ loginId: 'guided-claude-session', code: 'authorization#state' }) });
+    expect(input.value).toBe('');
+    await act(async () => button('취소').click());
+    expect(button('터미널').disabled).toBe(false);
+  });
+
+  it('Codex는 브라우저 링크와 복사 가능한 기기 코드를 제공한다', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    await render(false);
+    await connect('codex');
+    await act(async () => emit('prompt', { url: 'https://auth.openai.com/codex/device', code: 'ABCD-12345' }));
+    expect(container.querySelector('a.btn-primary')?.getAttribute('href')).toBe('https://auth.openai.com/codex/device');
+    expect(container.querySelector('.connection-code code')?.textContent).toBe('ABCD-12345');
+    expect(container.querySelector('form')).toBeNull();
+    await act(async () => button('코드 복사').click());
+    expect(writeText).toHaveBeenCalledWith('ABCD-12345');
+    expect(button('복사됨')).toBeTruthy();
+    await act(async () => { loggedIn = true; emit('done', { loggedIn: true }); close(); });
+    expect(container.querySelector('.connection-code')).toBeNull();
+    expect(container.textContent).toContain('로그인됨');
+  });
+
+  it('탭은 방향키와 Home·End로 선택할 수 있고 활성 로그인 중에는 변경하지 않는다', async () => {
+    await render(false);
+    await act(async () => button('간편 로그인').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('터미널');
+    expect(document.activeElement).toBe(button('터미널'));
+    expect(container.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby')).toBe(button('터미널').id);
+    await act(async () => button('터미널').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('간편 로그인');
+    await connect();
+    await act(async () => button('간편 로그인').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('간편 로그인');
+  });
+
+  it('CLI가 전달한 실행 가능한 URL은 링크로 만들지 않는다', async () => {
+    await render(false);
+    await connect();
+    await act(async () => emit('prompt', { url: 'javascript:alert(1)' }));
+    expect(container.querySelector('a.btn-primary')).toBeNull();
+    expect(container.textContent).toContain('로그인 준비 중');
   });
 });

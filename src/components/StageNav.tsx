@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import type { DocumentView, Interview, ProjectDetail } from '@/lib/contract';
 import { Badge } from '@/components/ui';
 
@@ -44,39 +44,6 @@ function docBadges(d: DocumentView): ReactNode[] {
   return out;
 }
 
-const itemBase: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 'var(--space-xs)',
-  width: '100%',
-  paddingTop: 'var(--space-xs)',
-  paddingRight: 'var(--space-sm)',
-  paddingBottom: 'var(--space-xs)',
-  paddingLeft: 'var(--space-sm)',
-  borderWidth: '1px',
-  borderStyle: 'solid',
-  borderColor: 'transparent',
-  borderRadius: 'var(--radius-md)',
-  backgroundColor: 'transparent',
-  color: 'var(--color-ink)',
-  fontFamily: 'inherit',
-  fontSize: '15px',
-  fontWeight: 400,
-  lineHeight: 1.5,
-  textAlign: 'left',
-  cursor: 'pointer',
-};
-// 선택됨: 파란 테두리·글자로 구분한다
-const itemSelected: CSSProperties = {
-  ...itemBase,
-  backgroundColor: 'var(--color-surface)',
-  borderColor: 'var(--color-primary)',
-  color: 'var(--color-primary)',
-  fontWeight: 600,
-};
-
 function Item({
   label,
   selected,
@@ -94,10 +61,10 @@ function Item({
         type="button"
         onClick={onSelect}
         aria-current={selected ? 'step' : undefined}
-        style={selected ? itemSelected : itemBase}
+        className="stage-item"
       >
-        <span>{label}</span>
-        <span className="row" style={{ gap: 'var(--space-xxs)' }}>
+        <span className="stage-label" title={label}>{label}</span>
+        <span className="stage-status">
           {badges}
         </span>
       </button>
@@ -107,11 +74,11 @@ function Item({
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="stack" style={{ gap: 'var(--space-xxs)' }}>
-      <p className="eyebrow caption" style={{ margin: '0 0 var(--space-xxs) var(--space-sm)' }}>
+    <div className="stage-group">
+      <h3 className="stage-group-title">
         {title}
-      </p>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-xxs)' }}>
+      </h3>
+      <ul>
         {children}
       </ul>
     </div>
@@ -127,6 +94,7 @@ export function StageNav({
   selected: string;
   onSelect: (k: string) => void;
 }) {
+  const selectId = useId();
   const iv = detail.interview;
   const ivKey: Interview['status'] | 'none' = iv ? iv.status : 'none';
   const docs = (kind: DocumentView['kind']) => detail.documents.filter((d) => d.kind === kind);
@@ -142,7 +110,20 @@ export function StageNav({
   const exportOk = detail.exportGate.ok;
 
   return (
-    <nav aria-label="단계" className="stack">
+    <nav aria-label="단계" className="stage-nav">
+      <div className="field stage-mobile-picker">
+        <label htmlFor={selectId}>단계</label>
+        <select id={selectId} value={selected} onChange={(event) => onSelect(event.target.value)}>
+          <option value={INTERVIEW_KEY}>인터뷰 · {INTERVIEW_TEXT[ivKey].text}</option>
+          {(['base', 'requirement', 'screen', 'change'] as const).map((kind) => (
+            <optgroup key={kind} label={{ base: '기본 문서', requirement: '요구사항 문서', screen: '화면 정의서', change: '변경 기록' }[kind]}>
+              {docs(kind).map((doc) => <option key={doc.path} value={doc.path}>{docLabel(doc)} · {STATUS_TEXT[doc.status].text}{doc.running ? ' · 실행 중' : ''}{doc.upstreamChanged ? ' · 앞 문서 변경됨' : ''}{doc.missingFromList ? ' · 목록에서 빠짐' : ''}</option>)}
+            </optgroup>
+          ))}
+          <option value={EXPORT_KEY}>내보내기 · {exportOk ? '가능' : '확인 필요'}</option>
+        </select>
+      </div>
+      <div className="stage-desktop-list">
       <Group title="인터뷰">
         <Item
           label="인터뷰"
@@ -190,6 +171,7 @@ export function StageNav({
           ]}
         />
       </Group>
+      </div>
     </nav>
   );
 }

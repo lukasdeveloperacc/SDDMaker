@@ -128,12 +128,18 @@ a:visited {
   border-bottom: 1px solid var(--color-hairline);
   color: var(--color-ink);
   font-size: 15px;
+  justify-content: space-between;
+  gap: var(--space-md);
 }
 .nav-bar a {
   color: var(--color-ink);
   font-weight: 600;
   text-decoration: none;
 }
+.nav-bar nav { display: flex; align-items: center; gap: var(--space-lg); }
+.nav-bar nav a { font-size: 14px; font-weight: 500; color: var(--color-ink-muted); }
+.nav-bar a:hover { color: var(--color-primary); }
+.nav-bar .brand { font-size: 18px; letter-spacing: -0.25px; }
 
 .page {
   max-width: 1200px;
@@ -204,6 +210,7 @@ a:visited {
   font-weight: 500;
 }
 .field input,
+.field select,
 .field textarea {
   font: inherit;
   font-size: 15px;
@@ -213,6 +220,9 @@ a:visited {
   background: var(--color-surface);
   color: var(--color-ink);
 }
+.field select { min-height: 40px; max-width: 100%; padding-right: var(--space-xxl); cursor: pointer; }
+.field select:disabled { cursor: default; opacity: 0.6; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: var(--color-primary); }
 .field textarea {
   min-height: 120px;
   resize: vertical;
@@ -457,12 +467,11 @@ a:visited {
   padding: 0;
   border: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: var(--space-sm);
 }
-.agent-picker:disabled {
-  opacity: 0.6;
-}
+.agent-picker select { width: 180px; }
 .agent-option {
   min-width: 0;
   display: flex;
@@ -512,6 +521,7 @@ a:visited {
 }
 .agent-help {
   display: inline-flex;
+  position: relative;
 }
 .agent-help > a {
   display: inline-flex;
@@ -521,9 +531,9 @@ a:visited {
 .agent-help [role='tooltip'] {
   position: absolute;
   z-index: 2;
-  bottom: calc(100% + var(--space-xs));
-  left: 0;
-  width: min(240px, 100%);
+  top: calc(100% + var(--space-xxs));
+  right: 0;
+  width: min(260px, calc(100vw - 64px));
   padding: var(--space-sm);
   border-radius: var(--radius-sm);
   background: var(--color-ink-secondary);
@@ -568,4 +578,78 @@ a:visited {
   .editor-split {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* 작업 공간: 조용한 단계 목록과 하나의 문서 작업면 */
+.project-heading { display: grid; gap: var(--space-xs); padding-block: var(--space-xs) var(--space-sm); }
+.project-heading h1 { margin: 0; overflow-wrap: anywhere; }
+.project-heading > .caption { max-width: 75ch; }
+.project-workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-lg); align-items: start; }
+.project-sidebar { min-width: 0; position: sticky; top: var(--space-lg); max-height: calc(100vh - 48px); overflow-y: auto; }
+.project-panel { min-width: 0; min-height: 480px; padding: var(--space-xl); background: var(--color-surface); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); }
+.project-panel > .stack { gap: var(--space-lg); }
+.project-panel h2 { margin: 0; overflow-wrap: anywhere; }
+.project-panel > .stack > .card { border: 0; padding: 0; border-radius: 0; }
+.stage-desktop-list { display: grid; gap: var(--space-lg); min-width: 0; }
+.stage-group, .stage-group li { min-width: 0; }
+.stage-group-title { font-size: 14px; font-weight: 600; color: var(--color-ink-muted); margin: 0 0 var(--space-xs) var(--space-sm); }
+.stage-group ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xxs); }
+.stage-group li.caption { padding-inline: var(--space-sm); font-size: 13px; }
+.stage-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); width: 100%; padding: var(--space-xs) var(--space-sm); border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--color-ink-secondary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.stage-item:hover { background: var(--color-surface); }
+.stage-item[aria-current='step'] { background: var(--color-surface); border-color: var(--color-primary); color: var(--color-primary); font-weight: 600; }
+.stage-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-status { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-xxs); flex-shrink: 0; max-width: 110px; }
+.stage-status .badge { font-size: 11px; gap: var(--space-xxs); padding: 3px 6px; background: transparent; border: 0; white-space: nowrap; }
+.stage-status .badge::before { width: 6px; height: 6px; }
+.stage-mobile-picker { display: none; }
+
+/* 계정 연결은 작업에서 분리된 설정 화면 */
+.connections-page { max-width: 800px; margin: var(--space-lg) auto; display: grid; gap: var(--space-xl); }
+.connections-page-heading { display: grid; gap: var(--space-xs); }
+.connections-page-heading h1, .connections-page-heading p { margin: 0; }
+.agent-connections { min-width: 0; }
+.connection-tabs { display: flex; gap: var(--space-lg); border-bottom: 1px solid var(--color-hairline); margin-bottom: var(--space-lg); }
+.connection-tabs [role='tab'] { padding: var(--space-sm) 0; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--color-ink-muted); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+.connection-tabs [aria-selected='true'] { border-bottom-color: var(--color-primary); color: var(--color-primary); }
+.connection-tabs [role='tab']:disabled { cursor: default; }
+.connection-provider { padding: var(--space-lg); background: var(--color-surface); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); }
+.connection-provider + .connection-provider { margin-top: var(--space-md); }
+.connection-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-md); }
+.connection-identity { display: flex; align-items: center; min-width: 0; gap: var(--space-sm); }
+.connection-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--color-canvas-soft); color: var(--color-ink); flex-shrink: 0; }
+.connection-name { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.125px; }
+.connection-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-xs); }
+.connection-flow { display: grid; gap: var(--space-md); margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--color-hairline); min-width: 0; }
+.connection-flow p { margin: 0; }
+.connection-browser-action, .connection-code { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm); }
+.connection-code code { font-size: 24px; font-weight: 600; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.connection-code-form { display: grid; gap: var(--space-xs); }
+.connection-code-form input { min-width: 0; flex: 1; }
+.connection-code-form label { font-size: 15px; font-weight: 500; }
+.connection-code-form input { font: inherit; font-size: 15px; padding: var(--space-xs); border: 1px solid var(--color-hairline); border-radius: var(--radius-xs); background: var(--color-surface); color: var(--color-ink); }
+.connection-flow .login-console { margin: 0; }
+::selection { background: var(--color-accent-sky); color: var(--color-ink); }
+input, textarea { caret-color: var(--color-primary); }
+.project-sidebar, .editor-preview { scrollbar-color: var(--color-ink-faint) transparent; scrollbar-width: thin; }
+@media (max-width: 800px) {
+  .project-workspace { grid-template-columns: minmax(0, 1fr); gap: var(--space-md); }
+  .project-sidebar { position: static; max-height: none; overflow: visible; }
+  .stage-desktop-list { display: none; }
+  .stage-mobile-picker { display: flex; }
+  .stage-mobile-picker select { width: 100%; }
+  .project-panel { padding: var(--space-md); min-height: 360px; }
+}
+@media (max-width: 600px) {
+  .nav-bar { padding: var(--space-sm) var(--space-md); }
+  .nav-bar nav { gap: var(--space-md); }
+  .nav-bar nav a { font-size: 13px; }
+  .connections-page { margin-block: var(--space-xs); }
+  .connection-provider { padding: var(--space-md); }
+  .connection-heading { align-items: flex-start; }
+  .connection-actions { margin-left: auto; }
+  .connection-name { font-size: 18px; }
+  .connection-identity { gap: var(--space-xs); }
+  .connection-mark { width: 36px; height: 36px; }
+  .connection-actions .btn { min-height: 44px; }
 }

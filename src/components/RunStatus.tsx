@@ -1,4 +1,5 @@
 import type { AgentName } from '@/lib/contract';
+import Link from 'next/link';
 import { agentErrorHelp, isAgentErrorCode } from '@/lib/agent-errors';
 import type { AgentRun } from '@/lib/use-agent-run';
 import { Button, Notice } from '@/components/ui';
@@ -27,9 +28,9 @@ export function RunStatus({ run, agent }: { run: AgentRun; agent: AgentName }) {
     const help = isAgentErrorCode(error.code) ? agentErrorHelp(error.code) : null;
     return (
       <Notice tone="error" title={help?.title ?? '실행하지 못했습니다'}>
-        <p className="notice-body">{help ? help.body : error.message}</p>
-        {help && <p className="caption">{error.message}</p>}
-        {help?.action === 'login' && <p className="caption">에이전트 선택에서 로그인해 주세요.</p>}
+        <p className="notice-body">{help?.action === 'login' ? error.message : help?.body ?? error.message}</p>
+        {help && help.action !== 'login' && <p className="caption">{error.message}</p>}
+        {help?.action === 'login' && <Link href="/settings/agents">에이전트 연결</Link>}
         {error.items && error.items.length > 0 && (
           <ul className="caption">
             {error.items.map((item) => (

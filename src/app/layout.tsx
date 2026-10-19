@@ -10,7 +10,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="ko">
       <body>
         <header className="nav-bar">
-          <Link href="/">SDDMaker</Link>
+          <Link href="/" className="brand">SDDMaker</Link>
+          <nav aria-label="주 메뉴">
+            <Link href="/">프로젝트</Link>
+            <Link href="/settings/agents">에이전트 연결</Link>
+          </nav>
         </header>
         <main className="page">{children}</main>
       </body>

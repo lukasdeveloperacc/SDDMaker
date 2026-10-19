@@ -44,6 +44,7 @@ flowchart TD
 ```
 
 - **페이지**: 화면과 입력만 맡는다. DB·CLI에 직접 접근하지 않는다. 예외로 화면 정의서의 HTML 정리·컴포넌트 교체는 브라우저가 한다 ([requirements/screens.md](requirements/screens.md#결과-반영)).
+- **에이전트 연결**: `/settings/agents`에서 간편 로그인과 실제 PTY 터미널을 탭으로 제공한다. 작업 화면은 에이전트 Select만 사용하며 로그인 오류는 연결 화면으로 안내한다.
 - **API**: 요청 검증, 생성 순서·동시 실행 규칙 검사, 모듈 호출.
 - **DB 모듈**: 스키마 생성과 조회·저장. 테이블은 [3-DATABASE.md](3-DATABASE.md).
 - **에이전트 모듈**: CLI별 어댑터(`claude`, `codex`)가 실행·상태 확인·로그인을 같은 형태로 제공한다. 동작 규칙은 [requirements/agent-cli.md](requirements/agent-cli.md), CLI별 실제 명령은 아래 [외부 연동](#외부-연동-에이전트-cli).
