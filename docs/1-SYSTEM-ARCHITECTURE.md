@@ -83,8 +83,8 @@ flowchart TD
 ### 실행 환경
 
 - **작업 폴더**: 모든 자식 프로세스는 `<데이터 폴더>/agent-workdir`(빈 폴더, 고정)에서 실행한다. SDDMaker 저장소에서 실행하면 CLI가 SDDMaker의 `AGENTS.md`·`docs/`를 지시로 읽어 생성 문서가 오염된다. Claude 세션은 작업 폴더 기준으로 저장되므로 폴더를 바꾸지 않는다.
-- **Codex 홈 분리**: Codex는 `CODEX_HOME=<데이터 폴더>/codex-home`으로 실행한다. 사용자 전역 지시문(`~/.codex/AGENTS.md`)이 생성 문서에 섞이지 않게 하기 위해서다. 그래서 SDDMaker의 Codex 로그인은 사용자 터미널의 Codex 로그인과 따로이며, 로그인 파일은 CLI가 이 폴더에 둔다. Claude는 사용자 기본 로그인을 그대로 쓴다.
-- **API 키·다른 경로 제거**: 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, `CODEX_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `OPENAI_BASE_URL`을 지운다. 남아 있으면 구독 대신 API 키나 다른 경로로 실행되어 과금될 수 있다.
+- **CLI 홈 분리**: Claude는 `CLAUDE_CONFIG_DIR=<데이터 폴더>/claude-home`, Codex는 `CODEX_HOME=<데이터 폴더>/codex-home`으로 실행한다. 로그인·상태 확인·생성 모두 같은 경로를 쓰며 상속된 전역 홈 설정은 덮어쓴다. 두 CLI 모두 SDDMaker에서 별도로 로그인하며, 호스트의 로그인 파일을 복사하거나 마운트하지 않는다 ([changes/003-isolated-login.md](changes/003-isolated-login.md)). Claude의 macOS Keychain 항목도 설정 디렉터리별로 구분되며, Linux에서는 전용 폴더의 `.credentials.json`에 저장한다. Codex는 이 폴더를 사용해 사용자 전역 `~/.codex/AGENTS.md`도 분리한다.
+- **API 키·다른 경로 제거**: 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `OPENAI_BASE_URL`을 지운다. 호스트의 인증 토큰이나 다른 과금 경로가 전용 구독 로그인보다 우선하지 않도록 한다.
 - **셸 미사용**: 실행 파일을 직접 실행한다(`spawn`, 셸 없음).
 
 ### 로그인 상태·로그인
@@ -93,7 +93,7 @@ flowchart TD
 | --- | --- | --- |
 | 상태 확인 | `auth status` — JSON. 로그인: `loggedIn: true`, `authMethod: "claude.ai"`(구독). 미로그인: `loggedIn: false`, `authMethod: "none"` | `login status` (`CODEX_HOME` 지정) — 로그인: `Logged in using ChatGPT`, 종료 코드 0. 미로그인: `Not logged in`, 종료 코드 1 |
 | 로그인 | `auth login --claudeai` (구독, 브라우저가 열림) | `login --device-auth` (`CODEX_HOME` 지정, URL·코드 출력) |
-| 터미널 로그인 안내 | `claude auth login` | `CODEX_HOME=<데이터 폴더>/codex-home codex login` |
+| 터미널 로그인 안내 | `CLAUDE_CONFIG_DIR='<데이터 폴더>/claude-home' claude auth login --claudeai` | `CODEX_HOME='<데이터 폴더>/codex-home' codex login --device-auth` |
 
 - 로그인 명령이 터미널 없는 자식 프로세스에서 URL·코드를 어떻게 출력하는지는 아직 확인하지 않았다 (실제 로그인이 필요). [changes/001-mvp.md](changes/001-mvp.md) 구현 작업 1에서 확인한다.
 - 앱은 자체 OAuth를 구현하지 않고 토큰을 다루지 않는다 ([requirements/agent-cli.md](requirements/agent-cli.md#규칙)).
@@ -102,7 +102,7 @@ flowchart TD
 
 - 호스트 개발 서버는 `127.0.0.1`에만 연다. 컨테이너 내부 서버는 포트 전달을 위해 `0.0.0.0`에서 받고, Docker의 호스트 포트는 `127.0.0.1`에만 공개한다. 인증 없는 API가 사용자 구독으로 CLI를 실행하므로 같은 네트워크에 열면 안 된다.
 - 모든 요청은 `Host`가 `localhost`/`127.0.0.1`일 때만 받는다 (DNS rebinding으로 문서 본문을 읽는 것을 막음). 변경 요청(POST·PUT·DELETE·PATCH)은 `Origin`이 있어야 하며, 그 호스트와 포트가 `Host`와 같아야 한다. 다른 로컬 포트와 `localhost`↔`127.0.0.1` 혼용도 거부한다.
-- `<데이터 폴더>`에는 DB와 SDDMaker용 Codex 로그인 파일이 있다. git에 올리거나 공유하지 않는다.
+- `<데이터 폴더>`에는 DB와 SDDMaker용 CLI 로그인 파일이 있다. git에 올리거나 공유하지 않는다.
 
 ## 서버 공유 상태
 
@@ -126,7 +126,7 @@ CLI는 별도 프로세스 그룹으로 실행한다. 취소·연결 끊김·시
 | --- | --- | --- |
 | `CLAUDE_CLI` | Claude Code 실행 파일의 절대 경로. 인자를 넣지 않는다 | `claude` (PATH에서 찾음) |
 | `CODEX_CLI` | Codex 실행 파일의 절대 경로. 인자를 넣지 않는다 | `codex` (PATH에서 찾음) |
-| `SDDMAKER_DATA_DIR` | DB 파일(`sddmaker.db`), CLI 작업 폴더(`agent-workdir/`), Codex 홈(`codex-home/`)을 둘 폴더 | `./data` |
+| `SDDMAKER_DATA_DIR` | DB 파일(`sddmaker.db`), CLI 작업 폴더(`agent-workdir/`), Claude 홈(`claude-home/`), Codex 홈(`codex-home/`)을 둘 폴더 | `./data` |
 
 - 환경변수는 `.env.local`에 둔다. 셸 alias는 자식 프로세스에 적용되지 않으므로, `claude`를 alias로 쓰는 환경(예: `npx @anthropic-ai/claude-code`)은 Claude Code를 전역 설치하고 그 경로를 `CLAUDE_CLI`에 넣는다.
 - `./data/`는 git에서 제외한다.
@@ -160,8 +160,8 @@ docker stop sddmaker
 
 | 컨테이너 경로 | 보관 내용 | Compose 볼륨 |
 | --- | --- | --- |
-| `/app/data` | SQLite, 고정 작업 폴더, 앱 전용 Codex 홈·로그인 | `data` |
-| `/home/node` | Claude 로그인·설정·세션 | `cli-home` |
+| `/app/data` | SQLite, 고정 작업 폴더, 앱 전용 Claude·Codex 홈·로그인 | `data` |
+| `/home/node` | 그 밖의 CLI 홈 파일·캐시 | `cli-home` |
 
 볼륨 이름에는 Compose 프로젝트 접두사가 붙는다. 호스트의 `./data`, `~/.claude`, `~/.codex`는 자동으로 공유하지 않는다. 컨테이너 재생성·`down` 후에도 볼륨은 남는다. `docker compose down -v` 또는 해당 Docker 볼륨 삭제는 DB와 로그인까지 지운다. `.dockerignore`는 로컬 데이터·환경변수·Git·빌드·작업 기록을 이미지 빌드에서 제외한다.
 
@@ -172,7 +172,11 @@ docker compose exec sddmaker claude auth login --claudeai
 docker compose exec sddmaker codex login --device-auth
 ```
 
-Docker만 쓴다면 `docker compose exec sddmaker` 대신 `docker exec -it sddmaker`를 쓴다. URL은 호스트 브라우저에서 열고, Claude가 반환 코드를 요구하면 같은 터미널에 입력한다. Codex는 `CODEX_HOME=/app/data/codex-home`이므로 앱과 터미널이 같은 로그인을 쓴다. 로그인을 마치면 앱에서 상태를 새로 확인한다. 앱은 API 키 방식으로 대체하지 않는다.
+Docker만 쓴다면 `docker compose exec sddmaker` 대신 `docker exec -it sddmaker`를 쓴다. URL은 이용 중인 브라우저에서 열고, Claude가 반환 코드를 요구하면 같은 터미널에 입력한다. 이미지의 `CLAUDE_CONFIG_DIR=/app/data/claude-home`과 `CODEX_HOME=/app/data/codex-home`이 앱과 터미널에서 같으므로 컨테이너 인증이 앱에 반영된다. 호스트에 두 CLI나 로그인 정보가 없어도 인증을 시작할 수 있다. 로그인을 마치면 앱에서 상태를 새로 확인한다. 앱은 API 키 방식으로 대체하지 않는다.
+
+Claude는 콜백에 접근할 수 없는 환경에서 터미널 코드 입력이 필요할 수 있으므로 이때는 위 대화형 명령을 사용한다. 기존 `/home/node/.claude` 또는 호스트 기본 Claude 로그인은 새 전용 저장소로 자동 이동하지 않는다. 기존 파일을 삭제하지 않으며 새 경로에서 한 번 다시 인증한다.
+
+인증 격리 근거: [Claude 계정별 설정 디렉터리](https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts), [Codex 인증 저장소](https://learn.chatgpt.com/docs/auth#credential-storage).
 
 Codex의 Linux read-only sandbox는 Docker 호스트의 namespace·seccomp 정책에 따라 실행이 제한될 수 있다. 이번 Docker Desktop 검증에서는 실제 sandbox 명령이 bubblewrap namespace 권한 오류로 실패했다. 컨테이너에도 기존 `--sandbox read-only`를 유지하며, privileged 모드나 권한 우회는 기본 구성에 넣지 않는다. 이 환경에서는 Claude를 사용하거나 Codex를 호스트 실행에서 사용한다. 실제 구독 인증·모델 생성은 이미지 기동·가짜 CLI 검증과 별도다.
 

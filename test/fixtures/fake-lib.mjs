@@ -23,7 +23,7 @@ export function newId() {
 }
 
 const STRIPPABLE = [
-  'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY',
+  'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN',
   'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'OPENAI_BASE_URL',
 ];
 
@@ -39,6 +39,7 @@ export function envReport(stdin) {
     hasCodexKey: 'CODEX_API_KEY' in process.env,
     present: STRIPPABLE.filter((k) => k in process.env),
     codexHome: process.env.CODEX_HOME ?? null,
+    claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   }) + '\n');
   process.exit(0);
 }

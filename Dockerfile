@@ -21,7 +21,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
     && npm cache clean --force \
-    && mkdir -p /app/data/codex-home \
+    && mkdir -p /app/data/codex-home /app/data/claude-home \
     && chown -R node:node /app/data
 ENV NODE_ENV=production \
     DISABLE_AUTOUPDATER=1 \
@@ -29,6 +29,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOME=/home/node \
     SDDMAKER_DATA_DIR=/app/data \
+    CLAUDE_CONFIG_DIR=/app/data/claude-home \
     CODEX_HOME=/app/data/codex-home
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static

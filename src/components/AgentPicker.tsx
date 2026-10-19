@@ -157,12 +157,12 @@ export function AgentPicker({
 
             {showLogin && s && (
               <p className="caption">
-                터미널 로그인: <code>{s.loginCommand}</code>
+                서버 터미널 로그인: <code>{s.loginCommand}</code>
               </p>
             )}
-            {a === 'codex' && showLogin && (
+            {showLogin && (
               <p className="caption">
-                SDDMaker는 전용 Codex 홈을 써서, 터미널에서 로그인했어도 여기서 한 번 더 로그인해야 합니다.
+                로그인은 SDDMaker 전용 저장소에 보관됩니다. Docker에서는 컨테이너 안에서 위 명령을 실행하세요.
               </p>
             )}
 

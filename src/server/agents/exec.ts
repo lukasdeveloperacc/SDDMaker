@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import type { AgentName, AgentErrorCode } from '@/lib/contract';
-import { agentWorkdir, cliPath, codexHome } from '../env';
+import { agentWorkdir, cliPath, claudeHome, codexHome } from '../env';
 import { trackChild, untrackChild } from '../runtime';
 
 export class AgentError extends Error {
@@ -26,8 +26,10 @@ export const RUN_TIMEOUT_MS = 10 * 60_000;
 export const STRIPPED_ENV = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
   'OPENAI_API_KEY',
   'CODEX_API_KEY',
+  'CODEX_ACCESS_TOKEN',
   'ANTHROPIC_BASE_URL',
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
@@ -56,8 +58,13 @@ function signalGroup(child: ChildProcess, sig: NodeJS.Signals) {
 export function childEnv(agent: AgentName): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const k of STRIPPED_ENV) delete env[k];
+  if (agent === 'claude') env.CLAUDE_CONFIG_DIR = claudeHome();
   if (agent === 'codex') env.CODEX_HOME = codexHome();
   return env;
+}
+
+export function shellQuote(value: string): string {
+  return "'" + value.replaceAll("'", "'\\''") + "'";
 }
 
 // 셸을 거치지 않는다. 자식이 끝나거나 취소·시간 초과로 죽은 뒤에 resolve/reject한다.

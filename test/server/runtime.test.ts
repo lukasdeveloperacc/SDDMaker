@@ -1,16 +1,18 @@
 import fs from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import { describe, expect, it, afterEach } from 'vitest';
-import { AgentError, spawnCli, STRIPPED_ENV } from '@/server/agents/exec';
+import { AgentError, shellQuote, spawnCli, STRIPPED_ENV } from '@/server/agents/exec';
 import { cancelRun, acquireLogin, acquireRun, cancelLogin, getRun, releaseLogin } from '@/server/runtime';
 import { dataDir } from '@/server/env';
 
 const ALL_KEYS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
   'OPENAI_API_KEY',
   'CODEX_API_KEY',
+  'CODEX_ACCESS_TOKEN',
   'ANTHROPIC_BASE_URL',
   'CLAUDE_CODE_USE_BEDROCK',
   'CLAUDE_CODE_USE_VERTEX',
@@ -63,6 +65,10 @@ afterEach(() => {
 });
 
 describe('spawnCli 환경', () => {
+  it('로그인 안내의 경로는 공백·따옴표·셸 치환 문자가 있어도 그대로 전달된다', () => {
+    const value = "/tmp/sdd maker's/$(exit 1)`exit 1`";
+    expect(execFileSync('/bin/sh', ['-c', `printf %s ${shellQuote(value)}`], { encoding: 'utf8' })).toBe(value);
+  });
   it.each(ALL_KEYS)('자식 프로세스에서 %s를 지운다', async (key) => {
     expect(STRIPPED_ENV).toContain(key);
     process.env[key] = 'secret';
@@ -86,6 +92,14 @@ describe('spawnCli 환경', () => {
     delete process.env.CODEX_HOME;
     expect((await runEnv('codex', '')).codexHome).toBe(path.join(dataDir(), 'codex-home'));
     expect((await runEnv('claude', '')).codexHome).toBeNull();
+  });
+
+  it('호스트의 CLI 홈 설정 대신 SDDMaker 전용 로그인 저장소를 쓴다', async () => {
+    process.env.CLAUDE_CONFIG_DIR = '/host/claude-config';
+    process.env.CODEX_HOME = '/host/codex-home';
+    expect((await runEnv('claude', '')).claudeConfigDir).toBe(path.join(dataDir(), 'claude-home'));
+    expect((await runEnv('codex', '')).codexHome).toBe(path.join(dataDir(), 'codex-home'));
+    expect(fs.statSync(path.join(dataDir(), 'claude-home')).isDirectory()).toBe(true);
   });
 
   it('CLI 경로가 없으면 cli_not_found', async () => {

@@ -22,6 +22,12 @@ export function codexHome(): string {
   return dir;
 }
 
+export function claudeHome(): string {
+  const dir = path.join(dataDir(), 'claude-home');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function cliPath(agent: 'claude' | 'codex'): string {
   return agent === 'claude'
     ? process.env.CLAUDE_CLI || 'claude'

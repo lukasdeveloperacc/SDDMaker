@@ -37,7 +37,7 @@ describe('GET /api/agents', () => {
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: 'claude auth login' });
+    expect(body.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: expect.stringContaining('claude auth login --claudeai') });
     expect(body.codex).toEqual({
       installed: true,
       loggedIn: true,

@@ -15,7 +15,9 @@ docker compose exec sddmaker claude auth login --claudeai
 docker compose exec sddmaker codex login --device-auth
 ```
 
-앱이 표시하거나 터미널에 출력된 URL은 호스트 브라우저에서 엽니다. DB·Codex 홈은 `data`, Claude 로그인·설정은 `cli-home` 볼륨에 저장되어 컨테이너를 다시 만들어도 유지됩니다. `docker compose down`으로 중지합니다. `down -v`는 저장 데이터와 로그인을 삭제하므로 사용하지 않습니다.
+앱이 표시하거나 터미널에 출력된 URL은 이용 중인 브라우저에서 엽니다. 브라우저로 계정을 인증하더라도 로그인 정보는 컨테이너의 SDDMaker 전용 저장소에만 남습니다. 호스트에 두 CLI가 설치되거나 로그인되어 있을 필요가 없습니다.
+
+DB와 두 CLI의 로그인·설정은 `data` 볼륨(`/app/data/claude-home`, `/app/data/codex-home`), 그 밖의 CLI 홈 파일은 `cli-home` 볼륨에 저장되어 컨테이너를 다시 만들어도 유지됩니다. `docker compose down`으로 중지합니다. `down -v`는 저장 데이터와 로그인을 삭제하므로 사용하지 않습니다.
 
 다른 포트는 `SDDMAKER_PORT=3001 docker compose up -d --wait`로 지정합니다. Docker만 사용하는 방법과 CLI의 컨테이너 제약은 [컨테이너 실행 안내](docs/1-SYSTEM-ARCHITECTURE.md#dockerdocker-compose-실행)를 참고하세요.
 
@@ -28,6 +30,6 @@ npm ci
 npm run dev
 ```
 
-브라우저에서 <http://127.0.0.1:3000>을 엽니다. Claude Code 또는 Codex CLI가 필요하며, 앱의 에이전트 설정에서 로그인 상태를 확인할 수 있습니다. Codex는 앱 전용 홈을 사용하므로 앱에서 별도로 로그인합니다.
+브라우저에서 <http://127.0.0.1:3000>을 엽니다. Claude Code 또는 Codex CLI가 필요하며, 앱의 에이전트 설정에서 로그인 상태를 확인할 수 있습니다. 두 CLI 모두 앱 전용 저장소를 사용하므로 앱에서 별도로 로그인합니다. 터미널에서 인증할 때는 앱에 표시된 전용 저장소 경로가 포함된 명령을 사용합니다.
 
 실행 환경과 환경변수는 [시스템 아키텍처](docs/1-SYSTEM-ARCHITECTURE.md#실행테스트), 구현·검증 결과와 남은 실제 CLI 확인은 [MVP 변경 기록](docs/changes/001-mvp.md#결과)을 참고하세요.

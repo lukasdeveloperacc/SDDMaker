@@ -5,7 +5,7 @@ import { getAdapter, ensureReady, agentStatuses, AgentError } from '@/server/age
 import { claudeAdapter } from '@/server/agents/claude';
 import { codexAdapter } from '@/server/agents/codex';
 import { RUN_TIMEOUT_MS, RunTimeoutError } from '@/server/agents/exec';
-import { agentWorkdir, codexHome, dataDir } from '@/server/env';
+import { agentWorkdir, claudeHome, codexHome, dataDir } from '@/server/env';
 
 const signal = () => new AbortController().signal;
 
@@ -206,8 +206,8 @@ describe('상태 확인', () => {
   it('agentStatuses는 두 CLI의 상태와 로그인 안내를 함께 준다', async () => {
     process.env.FAKE_AUTH = 'logged_in';
     const s = await agentStatuses();
-    expect(s.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: 'claude auth login' });
-    expect(s.codex.loginCommand).toBe(`CODEX_HOME=${codexHome()} codex login`);
+    expect(s.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: `CLAUDE_CONFIG_DIR='${claudeHome()}' claude auth login --claudeai` });
+    expect(s.codex.loginCommand).toBe(`CODEX_HOME='${codexHome()}' codex login --device-auth`);
     expect(s.codex.subscription).toBe(true);
   });
 
