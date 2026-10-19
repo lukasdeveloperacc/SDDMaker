@@ -23,7 +23,7 @@
 | 프로젝트 생성·목록·유지·삭제, 디자인 문서 입력 | [requirements/project.md](requirements/project.md) |
 | 초기 인터뷰 (시작 전·도중 건너뛰기 가능) | [requirements/interview.md](requirements/interview.md) |
 | 문서 세트 단계별 생성·편집·피드백·승인·승인 취소 | [requirements/documents.md](requirements/documents.md) |
-| 화면 정의서 (HTML 목업, 컴포넌트 선택·그리기 주석으로 수정) | [requirements/screens.md](requirements/screens.md) |
+| 화면 정의서 (HTML 목업, 화면 간 링크로 넘겨 보는 프로토타입, 컴포넌트 선택·그리기 주석으로 수정) | [requirements/screens.md](requirements/screens.md) |
 | 에이전트 연동 (구독 로그인 CLI, 단계별 선택) | [requirements/agent-cli.md](requirements/agent-cli.md) |
 | 승인 문서 zip 내보내기 | [requirements/export.md](requirements/export.md) |
 
@@ -51,6 +51,7 @@ SDDMaker 자신의 [docs 규칙](AGENTS.md)과 같은 구조로 만든다. 받�
 - 디자인 문서 생성·자동 선택 (사용자가 골라 붙여 넣는다)
 - 마크다운 문서 일부만 골라 수정하는 기능 (화면 정의서는 컴포넌트 단위 수정을 지원한다)
 - 화면 정의서 그림 주석의 이미지 첨부 (그린 영역 좌표와 겹치는 컴포넌트만 보낸다)
+- 스크립트로 움직이는 프로토타입 (화면 간 링크 이동만 지원), 모든 화면을 한 판에 늘어놓는 캔버스 보기
 - 사용자 폴더에 직접 파일 쓰기 (내보내기는 zip 다운로드만)
 - 내보낸 문서로 에이전트가 코드를 구현하는 기능
 
