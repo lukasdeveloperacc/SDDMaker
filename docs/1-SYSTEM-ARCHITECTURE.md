@@ -16,15 +16,31 @@
 
 ## 모듈 역할과 경계
 
-```text
-브라우저 (페이지)
-  └─ 프로젝트 목록 / 프로젝트 상세(단계 목록: 인터뷰 · 기본 문서 · 요구사항 문서 · 화면 정의서 · 변경 기록 · 내보내기)
-     └─ 화면 정의서: iframe 미리보기 + 선택·그리기 주석 + 컴포넌트 교체(DOMParser)
-        │  fetch · SSE
-서버 (Next.js route handler)
-  ├─ 프로젝트·문서·인터뷰 API ──► DB 모듈 (SQLite)
-  ├─ 에이전트 실행 API (SSE) ───► 에이전트 모듈 ──► claude / codex 자식 프로세스
-  └─ 내보내기 API ─────────────► DB 모듈 → zip
+```mermaid
+flowchart TD
+  subgraph browser["브라우저"]
+    pages["프로젝트 목록·상세<br/>인터뷰 · 기본 문서 · 요구사항 · 화면 정의서 · 변경 기록 · 내보내기"]
+    preview["화면 정의서<br/>iframe 미리보기 · 선택·그리기 주석 · 컴포넌트 교체 DOMParser"]
+    pages --> preview
+  end
+  subgraph server["서버 · Next.js route handler"]
+    api["프로젝트·문서·인터뷰 API"]
+    run["에이전트 실행 API · SSE"]
+    export["내보내기 API"]
+    db["DB 모듈 · SQLite"]
+    agents["에이전트 모듈"]
+    cli["claude / codex 자식 프로세스"]
+    zip["zip"]
+    api --> db
+    run --> agents --> cli
+    export --> db
+    db --> zip
+  end
+  pages -->|fetch| api
+  preview -->|fetch| api
+  pages <-->|fetch · SSE| run
+  pages -->|fetch| export
+  zip -->|다운로드| pages
 ```
 
 - **페이지**: 화면과 입력만 맡는다. DB·CLI에 직접 접근하지 않는다. 예외로 화면 정의서의 HTML 정리·컴포넌트 교체는 브라우저가 한다 ([requirements/screens.md](requirements/screens.md#결과-반영)).
@@ -84,7 +100,7 @@
 
 ## 보안
 
-- 개발 서버는 `127.0.0.1`에만 연다. 인증 없는 API가 사용자 구독으로 CLI를 실행하므로 같은 네트워크에 열면 안 된다.
+- 호스트 개발 서버는 `127.0.0.1`에만 연다. 컨테이너 내부 서버는 포트 전달을 위해 `0.0.0.0`에서 받고, Docker의 호스트 포트는 `127.0.0.1`에만 공개한다. 인증 없는 API가 사용자 구독으로 CLI를 실행하므로 같은 네트워크에 열면 안 된다.
 - 모든 요청은 `Host`가 `localhost`/`127.0.0.1`일 때만 받는다 (DNS rebinding으로 문서 본문을 읽는 것을 막음). 변경 요청(POST·PUT·DELETE·PATCH)은 `Origin`이 있어야 하며, 그 호스트와 포트가 `Host`와 같아야 한다. 다른 로컬 포트와 `localhost`↔`127.0.0.1` 혼용도 거부한다.
 - `<데이터 폴더>`에는 DB와 SDDMaker용 Codex 로그인 파일이 있다. git에 올리거나 공유하지 않는다.
 
@@ -116,6 +132,48 @@ CLI는 별도 프로세스 그룹으로 실행한다. 취소·연결 끊김·시
 - `./data/`는 git에서 제외한다.
 - 비밀값은 기록하지 않는다 (MVP는 API 키를 쓰지 않는다).
 
-## 배포
+## Docker·Docker Compose 실행
 
-하지 않는다. 로컬 실행 전용이다 ([0-PRODUCT.md](0-PRODUCT.md#제품-공통-정책)).
+로컬 실행 전용이며 외부 배포는 하지 않는다 ([0-PRODUCT.md](0-PRODUCT.md#제품-공통-정책)). Docker는 호스트 설치를 대신하는 실행 방법이다 ([changes/002-docker.md](changes/002-docker.md)).
+
+`Dockerfile`은 Node.js 24 Debian bookworm 기반의 다단계 빌드다. Linux 환경에서 `npm ci`와 Next.js standalone 빌드를 수행하므로 호스트의 `node_modules`나 SQLite 네이티브 모듈을 복사하지 않는다. 런타임에는 standalone 서버·정적 파일·`docs/AGENTS.md`와 Claude Code 2.1.303·Codex 0.162.1을 넣고 `node` 사용자로 실행한다. CLI 자동 업데이트는 끈다. 버전 변경 시 어댑터·로그인·sandbox 호환성을 다시 확인한다.
+
+```sh
+docker compose up -d --build --wait
+docker compose logs -f sddmaker
+docker compose down
+```
+
+기본 접속 주소는 `http://127.0.0.1:3000`이다. 호스트 포트만 바꾸려면 `SDDMAKER_PORT=3001 docker compose up -d --wait`를 쓴다. Compose는 init 프로세스, 상태 검사, 10초 종료 유예를 설정한다. 상태 검사는 SQLite를 읽는 `GET /api/projects`의 성공 여부를 확인한다.
+
+Docker만 사용할 때:
+
+```sh
+docker build -t sddmaker:local .
+docker run -d --name sddmaker --init \
+  -p 127.0.0.1:3000:3000 \
+  -v sddmaker-data:/app/data \
+  -v sddmaker-cli-home:/home/node \
+  sddmaker:local
+docker stop sddmaker
+```
+
+| 컨테이너 경로 | 보관 내용 | Compose 볼륨 |
+| --- | --- | --- |
+| `/app/data` | SQLite, 고정 작업 폴더, 앱 전용 Codex 홈·로그인 | `data` |
+| `/home/node` | Claude 로그인·설정·세션 | `cli-home` |
+
+볼륨 이름에는 Compose 프로젝트 접두사가 붙는다. 호스트의 `./data`, `~/.claude`, `~/.codex`는 자동으로 공유하지 않는다. 컨테이너 재생성·`down` 후에도 볼륨은 남는다. `docker compose down -v` 또는 해당 Docker 볼륨 삭제는 DB와 로그인까지 지운다. `.dockerignore`는 로컬 데이터·환경변수·Git·빌드·작업 기록을 이미지 빌드에서 제외한다.
+
+컨테이너 안에서 처음 한 번 계정 인증이 필요하다. 앱의 로그인 버튼을 사용하거나 터미널에서 실행한다:
+
+```sh
+docker compose exec sddmaker claude auth login --claudeai
+docker compose exec sddmaker codex login --device-auth
+```
+
+Docker만 쓴다면 `docker compose exec sddmaker` 대신 `docker exec -it sddmaker`를 쓴다. URL은 호스트 브라우저에서 열고, Claude가 반환 코드를 요구하면 같은 터미널에 입력한다. Codex는 `CODEX_HOME=/app/data/codex-home`이므로 앱과 터미널이 같은 로그인을 쓴다. 로그인을 마치면 앱에서 상태를 새로 확인한다. 앱은 API 키 방식으로 대체하지 않는다.
+
+Codex의 Linux read-only sandbox는 Docker 호스트의 namespace·seccomp 정책에 따라 실행이 제한될 수 있다. 이번 Docker Desktop 검증에서는 실제 sandbox 명령이 bubblewrap namespace 권한 오류로 실패했다. 컨테이너에도 기존 `--sandbox read-only`를 유지하며, privileged 모드나 권한 우회는 기본 구성에 넣지 않는다. 이 환경에서는 Claude를 사용하거나 Codex를 호스트 실행에서 사용한다. 실제 구독 인증·모델 생성은 이미지 기동·가짜 CLI 검증과 별도다.
+
+구성 근거: [Next.js standalone 출력](https://nextjs.org/docs/app/api-reference/config/next-config-js/output), [Claude 컨테이너 로그인](https://code.claude.com/docs/en/authentication#log-in-to-claude-code), [Codex 헤드리스 로그인](https://learn.chatgpt.com/docs/auth#login-on-headless-devices), [Codex 컨테이너 sandbox](https://learn.chatgpt.com/docs/agent-approvals-security#run-codex-in-dev-containers).

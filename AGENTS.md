@@ -5,6 +5,7 @@
 - `README.md`: 프로젝트 소개.
 - `docs/`: 제품·설계·요구사항·변경 문서.
 - `.gitignore`: Git 추적 제외 설정.
+- `Dockerfile`·`.dockerignore`·`compose.yaml`: 컨테이너 이미지와 로컬 실행·볼륨 설정.
 - `package.json`·`package-lock.json`: 의존성과 스크립트.
 - `tsconfig.json`·`next.config.ts`·`next-env.d.ts`: TypeScript와 Next 설정.
 - `eslint.config.mjs`: 린트 설정.

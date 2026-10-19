@@ -1,0 +1,15 @@
+services:
+  sddmaker:
+    build: .
+    image: sddmaker:local
+    init: true
+    ports:
+      - "127.0.0.1:${SDDMAKER_PORT:-3000}:3000"
+    volumes:
+      - data:/app/data
+      - cli-home:/home/node
+    stop_grace_period: 10s
+
+volumes:
+  data:
+  cli-home:

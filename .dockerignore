@@ -1,0 +1,13 @@
+.git
+.next
+.omc*
+.omx*
+.impeccable
+node_modules
+data
+.env*
+**/inprogress
+*.tsbuildinfo
+*.log
+Dockerfile
+compose*.yaml

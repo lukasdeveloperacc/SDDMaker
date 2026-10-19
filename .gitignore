@@ -6,3 +6,4 @@ inprogress/
 node_modules/
 .next/
 *.tsbuildinfo
+.impeccable/

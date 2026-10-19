@@ -2,6 +2,27 @@
 
 Claude Code·Codex 구독 CLI로 인터뷰를 진행하고, SDD 문서와 화면 정의서를 생성·검토·승인해 `docs/` 구조의 zip으로 내보내는 로컬 앱입니다.
 
+Docker Compose로 실행하려면:
+
+```sh
+docker compose up -d --build --wait
+```
+
+<http://127.0.0.1:3000>으로 접속합니다. 이미지에는 두 CLI가 포함되며, 호스트의 로그인과 별도로 컨테이너에서 처음 한 번 구독 로그인합니다. 앱의 로그인 버튼을 사용하거나 다음 명령으로 로그인합니다. Claude가 코드 입력을 요구하면 터미널 명령을 사용합니다.
+
+```sh
+docker compose exec sddmaker claude auth login --claudeai
+docker compose exec sddmaker codex login --device-auth
+```
+
+앱이 표시하거나 터미널에 출력된 URL은 호스트 브라우저에서 엽니다. DB·Codex 홈은 `data`, Claude 로그인·설정은 `cli-home` 볼륨에 저장되어 컨테이너를 다시 만들어도 유지됩니다. `docker compose down`으로 중지합니다. `down -v`는 저장 데이터와 로그인을 삭제하므로 사용하지 않습니다.
+
+다른 포트는 `SDDMAKER_PORT=3001 docker compose up -d --wait`로 지정합니다. Docker만 사용하는 방법과 CLI의 컨테이너 제약은 [컨테이너 실행 안내](docs/1-SYSTEM-ARCHITECTURE.md#dockerdocker-compose-실행)를 참고하세요.
+
+현재 Docker Desktop 검증 환경에서는 Codex의 read-only sandbox가 namespace 권한 오류로 막힙니다. 컨테이너에서는 Claude를 사용하거나, Codex는 호스트 실행에서 사용합니다.
+
+호스트에서 직접 실행하려면:
+
 ```sh
 npm ci
 npm run dev
