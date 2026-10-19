@@ -76,7 +76,7 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
   onLine?: (line: string) => void;
   onStderrLine?: (line: string) => void; // 로그인 안내가 표준 오류로 나올 때 쓴다
   onOutput?: (text: string) => void;
-  onCodeInput?: (submit: (code: string) => boolean) => void;
+  onCodeInput?: (submit: (text: string, close?: boolean) => boolean) => void;
   timeoutMs?: number;
   timeoutError?: Error; // 시간 초과 시 reject할 오류는 부르는 쪽이 정한다
 }): Promise<SpawnResult> {
@@ -182,9 +182,10 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
         else resolve({ code, stderr: stderr.toString('utf8') });
       });
     });
-    opts.onCodeInput?.((code) => {
-      if (settled || failure || opts.signal.aborted || child.stdin.destroyed || child.stdin.writableEnded) return false;
-      child.stdin.end(code + '\n');
+    opts.onCodeInput?.((text, close = true) => {
+      if (settled || failure || opts.signal.aborted || child.exitCode !== null || child.signalCode !== null || child.stdin.destroyed || child.stdin.writableEnded) return false;
+      if (close) child.stdin.end(text + '\n');
+      else child.stdin.write(text + '\n');
       return true;
     });
   });
@@ -215,7 +216,7 @@ export async function runLogin(agent: AgentName, args: string[], i: LoginInput):
       onLine: scan,
       onStderrLine: scan,
       onOutput: (text) => i.onOutput?.(stripVTControlCharacters(text)),
-      onCodeInput: agent === 'claude' ? i.onCodeInput : undefined,
+      onCodeInput: i.onCodeInput,
       timeoutMs: i.timeoutMs ?? 600_000,
       timeoutError: new AgentError('login_failed', '시간 초과'),
     });

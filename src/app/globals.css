@@ -558,6 +558,19 @@ a:visited {
 .login-console :focus-visible {
   outline-color: var(--color-accent-sky);
 }
+.login-terminal-form {
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border-top: 1px solid var(--color-ink-muted);
+}
+.login-terminal-form input {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.login-terminal-form p {
+  color: var(--color-canvas-soft);
+}
+.login-device-help {
+  max-width: 75ch;
+}
 
 /* 마크다운 편집기 (왼쪽 입력, 오른쪽 미리보기) */
 .editor-split {

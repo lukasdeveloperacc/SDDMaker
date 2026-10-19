@@ -89,8 +89,99 @@ describe('웹 로그인 콘솔', () => {
     const events = await finish(sseEvents(response));
     expect(events.filter((e) => e.event === 'output').map((e) => e.data.text).join('')).toContain('Enter this code: ABCD-12345');
     expect(events).toContainEqual({ event: 'prompt', data: { url: 'https://auth.openai.com/codex/device', code: 'ABCD-12345' } });
-    expect(events.some((e) => e.event === 'input_ready')).toBe(false);
+    expect(events.some((e) => e.event === 'input_ready')).toBe(true);
     expect(events.at(-1)).toEqual({ event: 'done', data: { loggedIn: true } });
     expect((await PUT(jsonReq('PUT', url.replace('claude', 'codex'), { loginId: 'fake', code: 'x' }), ctx({ agent: 'codex' }))).status).toBe(400);
+  });
+});
+
+
+async function startTerminalLogin(agent: 'claude' | 'codex', signal?: AbortSignal) {
+  process.env.FAKE_LOGIN = 'terminal';
+  const endpoint = url.replace('claude', agent);
+  const response = await POST(jsonReq('POST', endpoint, undefined, signal), ctx({ agent }));
+  const events = sseEvents(response);
+  let loginId = '';
+  while (!loginId) {
+    const next = await events.next();
+    if (next.done) throw new Error('콘솔 입력을 기다리는 중 종료됨');
+    if (next.value.event === 'input_ready') loginId = next.value.data.loginId;
+  }
+  const input = (value: unknown, id = loginId) => PUT(jsonReq('PUT', endpoint, { loginId: id, input: value }), ctx({ agent }));
+  const cancel = () => DELETE(jsonReq('DELETE', endpoint), ctx({ agent }));
+  return { events, loginId, input, cancel };
+}
+
+describe('로그인 콘솔 stdin', () => {
+  it('Claude에서 잘못된 코드 뒤에도 같은 세션으로 수정한 줄을 입력한다', async () => {
+    const login = await startTerminalLogin('claude');
+    try {
+      expect((await login.input('wrong-code')).status).toBe(204);
+      let invalid = false;
+      while (!invalid) {
+        const next = await login.events.next();
+        if (next.done) throw new Error('수정 입력 전에 종료됨');
+        invalid = next.value.event === 'output' && next.value.data.text.includes('Invalid code; try again');
+      }
+      expect((await login.input('test-code#state-value')).status).toBe(204);
+      expect((await finish(login.events)).at(-1)).toEqual({ event: 'done', data: { loggedIn: true } });
+      expect((await login.input('late-input')).status).toBe(409);
+    } finally {
+      await login.cancel();
+      await finish(login.events);
+    }
+  });
+
+  it('Codex도 stdin 줄과 빈 Enter를 받고 완료한다', async () => {
+    const login = await startTerminalLogin('codex');
+    try {
+      expect((await login.input('')).status).toBe(204);
+      let receivedEnter = false;
+      while (!receivedEnter) {
+        const next = await login.events.next();
+        if (next.done) throw new Error('Enter 입력 전에 종료됨');
+        receivedEnter = next.value.event === 'output' && next.value.data.text.includes('Waiting for device confirmation');
+      }
+      expect((await login.input('confirm-device')).status).toBe(204);
+      const rest = await finish(login.events);
+      expect(rest.filter((e) => e.event === 'output').map((e) => e.data.text).join('')).toContain('Device confirmation received');
+      expect(rest.at(-1)).toEqual({ event: 'done', data: { loggedIn: true } });
+    } finally {
+      await login.cancel();
+      await finish(login.events);
+    }
+  });
+
+  it('잘못된 줄과 이전 세션, 취소 뒤 입력을 두 에이전트 모두 거부한다', async () => {
+    for (const agent of ['claude', 'codex'] as const) {
+      const login = await startTerminalLogin(agent);
+      try {
+        for (const value of [null, 1, 'one\ntwo', 'one\rtwo', '\u0000', '\u001b[A', '\t', 'a'.repeat(4097)]) {
+          expect((await login.input(value)).status).toBe(400);
+        }
+        expect((await login.input('line', 'old-session')).status).toBe(409);
+        const endpoint = url.replace('claude', agent);
+        expect((await PUT(jsonReq('PUT', endpoint, { loginId: login.loginId, input: 'line', code: 'code#state' }), ctx({ agent }))).status).toBe(400);
+        await login.cancel();
+        expect((await login.input('after-cancel')).status).toBe(409);
+      } finally {
+        await login.cancel();
+        await finish(login.events);
+      }
+      const replacement = await startTerminalLogin(agent);
+      try {
+        expect((await replacement.input('line', login.loginId)).status).toBe(409);
+      } finally {
+        await replacement.cancel();
+        await finish(replacement.events);
+      }
+    }
+  });
+
+  it('가이드 코드가 입력을 닫은 뒤 콘솔 쓰기는 거부한다', async () => {
+    const login = await startCodeLogin();
+    expect((await PUT(jsonReq('PUT', url, { loginId: login.loginId, code: 'test-code#state-value' }), context())).status).toBe(204);
+    expect((await PUT(jsonReq('PUT', url, { loginId: login.loginId, input: 'late-input' }), context())).status).toBe(409);
+    await finish(login.events);
   });
 });

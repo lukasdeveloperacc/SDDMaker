@@ -11,7 +11,7 @@ interface RunEntry {
 
 interface RuntimeState {
   runs: Map<number, RunEntry>;
-  logins: Map<AgentName, { controller: AbortController; id: string; submit?: (code: string) => boolean }>;
+  logins: Map<AgentName, { controller: AbortController; id: string; submit?: (text: string, close?: boolean) => boolean }>;
 }
 
 // 개발 서버가 모듈을 다시 읽어도 실행 잠금과 자식 목록이 사라지지 않게 globalThis에 둔다.
@@ -80,7 +80,7 @@ export function cancelLogin(agent: AgentName): void {
   state.logins.get(agent)?.controller.abort();
 }
 
-export function setLoginCodeInput(agent: AgentName, controller: AbortController, submit: (code: string) => boolean): string | null {
+export function setLoginCodeInput(agent: AgentName, controller: AbortController, submit: (text: string, close?: boolean) => boolean): string | null {
   const entry = state.logins.get(agent);
   if (!entry || entry.controller !== controller || controller.signal.aborted) return null;
   entry.submit = submit;
@@ -94,6 +94,12 @@ export function submitLoginCode(agent: AgentName, id: string, code: string): boo
   // 한 세션에 한 줄만 보낸다. 이전 요청의 재전송이 다음 입력으로 넘어가지 않게 한다.
   entry.submit = undefined;
   return true;
+}
+
+export function writeLoginInput(agent: AgentName, id: string, input: string): boolean {
+  const entry = state.logins.get(agent);
+  if (!entry || entry.id !== id || entry.controller.signal.aborted || !entry.submit) return false;
+  return entry.submit(input, false);
 }
 
 // 자식 프로세스 그룹(pgid = 자식 pid)을 추적한다. 앱이 꺼질 때 남은 CLI를 끝내려고 쓴다.

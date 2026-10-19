@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // 가짜 Codex CLI. 이벤트 모양은 docs/1-SYSTEM-ARCHITECTURE.md "외부 연동"의 확인된 형식을 따른다.
+import { createInterface } from 'node:readline';
 import { answerFor, envReport, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
 
 const argv = process.argv.slice(2);
@@ -20,6 +21,17 @@ async function deviceLogin() {
   recordPid();
   process.stdout.write('Open https://auth.openai.com/codex/device\nEnter this code: ABCD-12345\n');
   const m = process.env.FAKE_LOGIN || 'ok';
+  if (m === 'terminal') {
+    const input = createInterface({ input: process.stdin });
+    input.on('line', (line) => {
+      if (line === 'confirm-device') {
+        process.stdout.write('Device confirmation received\n');
+        process.exit(0);
+      }
+      process.stdout.write('Waiting for device confirmation\n');
+    });
+    return;
+  }
   if (m === 'hang' || m === 'code') await hang();
   process.exit(m === 'fail' ? 1 : 0);
 }

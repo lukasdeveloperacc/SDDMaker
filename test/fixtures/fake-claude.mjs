@@ -25,6 +25,18 @@ async function login() {
   recordPid();
   process.stdout.write('Opening browser: https://claude.ai/oauth/fake?x=1\n');
   const m = process.env.FAKE_LOGIN || 'ok';
+  if (m === 'terminal') {
+    const input = createInterface({ input: process.stdin });
+    process.stderr.write('Paste code here if prompted > ');
+    input.on('line', (line) => {
+      if (line === 'test-code#state-value') {
+        process.stdout.write('Login successful\n');
+        process.exit(0);
+      }
+      process.stdout.write('Invalid code; try again\n');
+    });
+    return;
+  }
   if (m === 'code') {
     const input = createInterface({ input: process.stdin });
     process.stderr.write('Paste code here if prompted > ');

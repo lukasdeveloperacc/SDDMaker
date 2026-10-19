@@ -95,7 +95,7 @@ flowchart TD
 | 로그인 | `auth login --claudeai` (구독, 브라우저가 열림) | `login --device-auth` (`CODEX_HOME` 지정, URL·코드 출력) |
 | 터미널 로그인 안내 | `CLAUDE_CONFIG_DIR='<데이터 폴더>/claude-home' claude auth login --claudeai` | `CODEX_HOME='<데이터 폴더>/codex-home' codex login --device-auth` |
 
-- 두 CLI의 stdout·stderr를 SSE로 전달해 웹 로그인 콘솔에서 보여 준다. Claude는 로그인 동안 stdin을 열어 두고 세션 식별자를 확인한 반환 코드 한 줄을 전달한다. CLI 2.1.303은 PTY 없이 pipe에서 입력을 받으며, 개행 없는 프롬프트도 출력 조각 단위로 전달한다. Codex는 기기 인증 URL·코드를 보여 주고 브라우저 인증을 기다린다 ([changes/004-login-console.md](changes/004-login-console.md)). 실제 계정 인증·모델 생성은 별도 검증이다.
+- 두 CLI의 stdout·stderr를 SSE로 전달해 웹 로그인 콘솔에서 보여 준다. 두 CLI 모두 로그인 동안 stdin을 열어 두고 세션 식별자를 확인한 콘솔 입력을 한 줄씩 전달한다. Enter는 입력 전송, Ctrl+C는 로그인 취소다. Claude 간편 코드 제출은 전체 반환 코드 한 줄을 전달한 뒤 stdin을 닫는다. CLI 2.1.303은 PTY 없이 pipe에서 입력을 받으며, 개행 없는 프롬프트도 출력 조각 단위로 전달한다. Codex는 기기 인증 URL·코드를 보여 주고 브라우저 인증을 기다린다 ([changes/004-login-console.md](changes/004-login-console.md), [changes/005-console-input.md](changes/005-console-input.md)). Codex 기기 코드 로그인은 ChatGPT 보안 설정에서 허용해야 하며 기기 코드는 브라우저에 입력한다. 실제 계정 인증·모델 생성은 별도 검증이다.
 - 앱은 자체 OAuth를 구현하지 않고 토큰을 다루지 않는다 ([requirements/agent-cli.md](requirements/agent-cli.md#규칙)).
 
 ## 보안

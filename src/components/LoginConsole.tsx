@@ -17,6 +17,8 @@ export function LoginConsole({ agent, output, prompt, loginId, running, onSubmit
   const inputId = useId();
   const outputRef = useRef<HTMLPreElement>(null);
   const [code, setCode] = useState('');
+  const [consoleInput, setConsoleInput] = useState('');
+  const [inputSent, setInputSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -27,21 +29,27 @@ export function LoginConsole({ agent, output, prompt, loginId, running, onSubmit
   }, [output]);
 
   useEffect(() => {
-    if (!running) setCode('');
+    if (!running) {
+      setCode('');
+      setConsoleInput('');
+    }
   }, [running]);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent, terminal = false) {
     e.preventDefault();
-    if (!loginId || submitting || !code.trim()) return;
+    const value = terminal ? consoleInput : code;
+    if (!loginId || submitting || (!terminal && !value.trim())) return;
     setSubmitting(true);
     setError(null);
-    const value = code;
-    setCode('');
+    setInputSent(false);
+    if (terminal) setConsoleInput('');
+    else setCode('');
     try {
-      await api('PUT', `/api/agents/${agent}/login`, { loginId, code: value });
-      onSubmitted();
+      await api('PUT', `/api/agents/${agent}/login`, { loginId, ...(terminal ? { input: value } : { code: value }) });
+      if (terminal) setInputSent(true);
+      else onSubmitted();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '코드를 전달하지 못했습니다. 다시 시도하세요.');
+      setError(e instanceof Error ? e.message : '입력을 전달하지 못했습니다. 다시 시도하세요.');
     } finally {
       setSubmitting(false);
     }
@@ -90,15 +98,36 @@ export function LoginConsole({ agent, output, prompt, loginId, running, onSubmit
         </form>
       )}
       {running && !prompt && <p role="status">인증 페이지를 준비하고 있습니다…</p>}
+      {running && agent === 'codex' && (
+        <p className="login-device-help">기기 로그인이 차단되면 ChatGPT의 설정 → 보안에서 기기 코드 로그인을 허용한 뒤, 이 로그인을 취소하고 다시 연결하세요. <a href="https://learn.chatgpt.com/docs/auth#preferred-device-code-authentication-beta" target="_blank" rel="noopener noreferrer">설정 안내</a></p>
+      )}
       {running && agent === 'claude' && !loginId && prompt && <p role="status">인증 결과를 확인하고 있습니다…</p>}
       {error && <p role="alert">{error}</p>}
       <details className="login-console-details">
-        <summary>로그인 콘솔 보기</summary>
+        <summary>로그인 콘솔 열기 · 입력 가능</summary>
         <div className="login-console">
           <pre className="login-console-command">$ {agent === 'claude' ? 'claude auth login --claudeai' : 'codex login --device-auth'}</pre>
           <pre ref={outputRef} className="login-console-output" role="log" aria-label="로그인 CLI 출력" tabIndex={0}>
             {output || '로그인 명령을 시작합니다…'}
           </pre>
+          {running && loginId && (
+            <form className="login-terminal-form" onSubmit={(e) => void submit(e, true)} onKeyDown={(e) => {
+              if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                onCancel();
+              }
+            }}>
+              <div className="login-console-input-row">
+                <TextInput label="로그인 CLI 입력" type="password" value={consoleInput} onChange={(e) => { setConsoleInput(e.target.value); setInputSent(false); }}
+                  autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={4096}
+                  placeholder="입력 후 Enter" disabled={submitting} aria-describedby={`${inputId}-terminal-help`} />
+                <Button type="submit" variant="utility" disabled={submitting}>입력 전송</Button>
+              </div>
+              <p id={`${inputId}-terminal-help`}>Enter: 한 줄 전송 · Ctrl+C: 로그인 취소. 입력은 보안을 위해 가려집니다.</p>
+              <p>{agent === 'codex' ? 'Codex 기기 코드는 위 OpenAI 인증 페이지에 입력하세요. 이 명령은 브라우저 인증을 기다립니다.' : '브라우저에서 받은 인증 코드를 여기에 붙여넣을 수도 있습니다.'} 로그인 명령의 입력만 받습니다.</p>
+              {inputSent && <p role="status">입력을 CLI에 전달했습니다.</p>}
+            </form>
+          )}
         </div>
       </details>
       {running && <div><Button type="button" variant="utility" onClick={onCancel}>로그인 취소</Button></div>}

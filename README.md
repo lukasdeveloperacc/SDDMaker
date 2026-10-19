@@ -8,7 +8,7 @@ Docker Compose로 실행하려면:
 docker compose up -d --build --wait
 ```
 
-<http://127.0.0.1:3000>으로 접속합니다. 이미지에는 두 CLI가 포함되며, 호스트의 로그인과 별도로 컨테이너에서 처음 한 번 구독 로그인합니다. 앱에서 **계정 연결**을 누르고 인증 페이지를 엽니다. Claude가 Authentication code를 보여주면 앱에 전체 코드를 붙여넣고 Enter로 제출합니다. Codex는 앱에 표시된 기기 코드를 OpenAI 인증 페이지에 입력합니다. CLI 진행 상황은 로그인 콘솔에서 확인할 수 있습니다. 터미널에서 직접 인증하려면:
+<http://127.0.0.1:3000>으로 접속합니다. 이미지에는 두 CLI가 포함되며, 호스트의 로그인과 별도로 컨테이너에서 처음 한 번 구독 로그인합니다. 앱에서 **계정 연결**을 누르고 인증 페이지를 엽니다. Claude가 Authentication code를 보여주면 앱에 전체 코드를 붙여넣고 Enter로 제출합니다. Codex는 앱에 표시된 기기 코드를 OpenAI 인증 페이지에 입력합니다. Codex 기기 로그인이 차단되면 ChatGPT → 설정 → 보안에서 기기 코드 로그인을 허용한 뒤 앱에서 취소·다시 연결합니다. **로그인 콘솔 열기 · 입력 가능**을 펼치면 CLI에 한 줄씩 입력할 수 있습니다. Enter로 보내고 Ctrl+C로 취소합니다. 기기 코드는 콘솔이 아닌 OpenAI 인증 페이지에 입력합니다. 터미널에서 직접 인증하려면:
 
 ```sh
 docker compose exec sddmaker claude auth login --claudeai

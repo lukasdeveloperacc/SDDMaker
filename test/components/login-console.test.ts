@@ -52,6 +52,35 @@ afterEach(async () => {
 });
 
 describe('에이전트 로그인 콘솔', () => {
+  it.each(['claude', 'codex'] as const)('%s 콘솔에서 반복 입력과 빈 Enter를 보내고 Ctrl+C로 취소한다', async (agent) => {
+    await act(async () => root.render(createElement(AgentPicker, { value: agent, onChange: () => {} })));
+    const connect = [...container.querySelectorAll('button')].filter((b) => b.textContent === '계정 연결')[agent === 'claude' ? 0 : 1];
+    await act(async () => connect.click());
+    await act(async () => {
+      emit('input_ready', { loginId: 'terminal-session' });
+      emit('prompt', { url: 'https://example.com/auth', code: agent === 'codex' ? 'ABCD-12345' : undefined });
+    });
+    const form = container.querySelector('.login-terminal-form')!;
+    const input = form.querySelector('input')!;
+    expect(input.type).toBe('password');
+    for (const value of ['first line', 'second line', '']) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+      expect(JSON.parse(requests.filter((r) => r.method === 'PUT').at(-1)!.body!)).toEqual({ loginId: 'terminal-session', input: value });
+      expect(input.value).toBe('');
+      expect(input.isConnected).toBe(true);
+      expect(container.querySelector('[role="log"]')?.textContent).not.toContain(value || 'first line');
+    }
+    expect(requests.filter((r) => r.method === 'PUT')).toHaveLength(3);
+    if (agent === 'codex') expect(container.textContent).toContain('보안에서 기기 코드 로그인을 허용');
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true })));
+    expect(requests.some((r) => r.method === 'DELETE' && r.url.includes(agent))).toBe(true);
+    expect(container.querySelector('.login-console')).toBeNull();
+  });
+
   it('Claude 코드를 Enter로 제출하고 성공하면 콘솔을 지우고 로그인 상태를 갱신한다', async () => {
     await act(async () => root.render(createElement(AgentPicker, { value: 'claude', onChange: () => {} })));
     await act(async () => button('계정 연결').click());

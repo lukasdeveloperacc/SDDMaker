@@ -2,7 +2,7 @@ import { isAgentName } from '@/lib/contract';
 import { AgentError } from '@/server/agents/exec';
 import { getAdapter } from '@/server/agents';
 import type { AgentAdapter } from '@/server/agents/types';
-import { acquireLogin, cancelLogin, releaseLogin, setLoginCodeInput, submitLoginCode } from '@/server/runtime';
+import { acquireLogin, cancelLogin, releaseLogin, setLoginCodeInput, submitLoginCode, writeLoginInput } from '@/server/runtime';
 import { apiError, readJson } from '@/server/http';
 import { createSse } from '@/server/sse';
 
@@ -67,8 +67,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
 
 export async function PUT(req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
-  if (agent !== 'claude') return apiError(400, 'invalid_input', '인증 코드 입력은 Claude 로그인에서만 사용합니다');
+  if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
   const body = await readJson(req);
+  if (body && Object.hasOwn(body, 'input')) {
+    if (typeof body.input !== 'string' || body.input.length > 4096 || /\p{Cc}/u.test(body.input) || typeof body.loginId !== 'string' || Object.hasOwn(body, 'code')) {
+      return apiError(400, 'invalid_input', '로그인 콘솔에는 4096자 이내의 한 줄을 입력하세요');
+    }
+    if (!writeLoginInput(agent, body.loginId, body.input)) {
+      return apiError(409, 'invalid_state', '입력을 받을 수 없는 로그인입니다. 취소 후 다시 로그인하세요');
+    }
+    return new Response(null, { status: 204 });
+  }
+  if (agent !== 'claude') return apiError(400, 'invalid_input', '인증 코드 입력은 Claude 로그인에서만 사용합니다');
   const code = typeof body?.code === 'string' ? body.code.trim() : '';
   if (!/^[^\s#]+#[^\s#]+$/.test(code) || code.length > 4096 || /\p{Cc}/u.test(code) || typeof body?.loginId !== 'string') {
     return apiError(400, 'invalid_input', '브라우저에서 받은 인증 코드 전체를 한 줄로 붙여넣으세요');
