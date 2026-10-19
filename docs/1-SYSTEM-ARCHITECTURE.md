@@ -95,7 +95,7 @@ flowchart TD
 | 로그인 | `auth login --claudeai` (구독, 브라우저가 열림) | `login --device-auth` (`CODEX_HOME` 지정, URL·코드 출력) |
 | 터미널 로그인 안내 | `CLAUDE_CONFIG_DIR='<데이터 폴더>/claude-home' claude auth login --claudeai` | `CODEX_HOME='<데이터 폴더>/codex-home' codex login --device-auth` |
 
-- 로그인 명령이 터미널 없는 자식 프로세스에서 URL·코드를 어떻게 출력하는지는 아직 확인하지 않았다 (실제 로그인이 필요). [changes/001-mvp.md](changes/001-mvp.md) 구현 작업 1에서 확인한다.
+- 두 CLI의 stdout·stderr를 SSE로 전달해 웹 로그인 콘솔에서 보여 준다. Claude는 로그인 동안 stdin을 열어 두고 세션 식별자를 확인한 반환 코드 한 줄을 전달한다. CLI 2.1.303은 PTY 없이 pipe에서 입력을 받으며, 개행 없는 프롬프트도 출력 조각 단위로 전달한다. Codex는 기기 인증 URL·코드를 보여 주고 브라우저 인증을 기다린다 ([changes/004-login-console.md](changes/004-login-console.md)). 실제 계정 인증·모델 생성은 별도 검증이다.
 - 앱은 자체 OAuth를 구현하지 않고 토큰을 다루지 않는다 ([requirements/agent-cli.md](requirements/agent-cli.md#규칙)).
 
 ## 보안
@@ -165,7 +165,7 @@ docker stop sddmaker
 
 볼륨 이름에는 Compose 프로젝트 접두사가 붙는다. 호스트의 `./data`, `~/.claude`, `~/.codex`는 자동으로 공유하지 않는다. 컨테이너 재생성·`down` 후에도 볼륨은 남는다. `docker compose down -v` 또는 해당 Docker 볼륨 삭제는 DB와 로그인까지 지운다. `.dockerignore`는 로컬 데이터·환경변수·Git·빌드·작업 기록을 이미지 빌드에서 제외한다.
 
-컨테이너 안에서 처음 한 번 계정 인증이 필요하다. 앱의 로그인 버튼을 사용하거나 터미널에서 실행한다:
+컨테이너 안에서 처음 한 번 계정 인증이 필요하다. 앱의 **계정 연결**에서 인증 페이지를 열고, Claude의 반환 코드는 앱에 붙여넣거나 Codex의 기기 코드는 인증 페이지에 입력한다. 터미널에서 직접 인증하려면:
 
 ```sh
 docker compose exec sddmaker claude auth login --claudeai
@@ -174,7 +174,7 @@ docker compose exec sddmaker codex login --device-auth
 
 Docker만 쓴다면 `docker compose exec sddmaker` 대신 `docker exec -it sddmaker`를 쓴다. URL은 이용 중인 브라우저에서 열고, Claude가 반환 코드를 요구하면 같은 터미널에 입력한다. 이미지의 `CLAUDE_CONFIG_DIR=/app/data/claude-home`과 `CODEX_HOME=/app/data/codex-home`이 앱과 터미널에서 같으므로 컨테이너 인증이 앱에 반영된다. 호스트에 두 CLI나 로그인 정보가 없어도 인증을 시작할 수 있다. 로그인을 마치면 앱에서 상태를 새로 확인한다. 앱은 API 키 방식으로 대체하지 않는다.
 
-Claude는 콜백에 접근할 수 없는 환경에서 터미널 코드 입력이 필요할 수 있으므로 이때는 위 대화형 명령을 사용한다. 기존 `/home/node/.claude` 또는 호스트 기본 Claude 로그인은 새 전용 저장소로 자동 이동하지 않는다. 기존 파일을 삭제하지 않으며 새 경로에서 한 번 다시 인증한다.
+Claude는 콜백에 접근할 수 없는 환경에서 반환 코드를 요구할 수 있다. 앱 입력칸은 전체 `code#state`를 같은 로그인 CLI로 전달한다. 직접 로그인할 때는 위 대화형 명령의 터미널에 입력한다. 기존 `/home/node/.claude` 또는 호스트 기본 Claude 로그인은 새 전용 저장소로 자동 이동하지 않는다. 기존 파일을 삭제하지 않으며 새 경로에서 한 번 다시 인증한다.
 
 인증 격리 근거: [Claude 계정별 설정 디렉터리](https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts), [Codex 인증 저장소](https://learn.chatgpt.com/docs/auth#credential-storage).
 

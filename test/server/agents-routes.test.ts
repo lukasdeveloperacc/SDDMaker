@@ -91,7 +91,7 @@ describe('POST /api/agents/:agent/login', () => {
     process.env.FAKE_AUTH = 'logged_in';
     const res = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/claude/login'), ctx({ agent: 'claude' }));
     const events = await readSse(res);
-    expect(events[0]).toEqual({ event: 'prompt', data: { url: 'https://claude.ai/oauth/fake?x=1' } });
+    expect(events).toContainEqual({ event: 'prompt', data: { url: 'https://claude.ai/oauth/fake?x=1' } });
     expect(events[events.length - 1]).toEqual({ event: 'done', data: { loggedIn: true } });
   });
 
@@ -119,7 +119,7 @@ describe('POST /api/agents/:agent/login', () => {
     process.env.FAKE_LOGIN = 'hang';
     const first = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/claude/login'), ctx({ agent: 'claude' }));
     const it1 = sseEvents(first)[Symbol.asyncIterator]();
-    expect((await it1.next()).value.event).toBe('prompt');
+    while ((await it1.next()).value.event !== 'prompt') { /* 출력과 입력 준비 이벤트를 먼저 받을 수 있다 */ }
 
     const second = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/claude/login'), ctx({ agent: 'claude' }));
     expect(second.status).toBe(409);

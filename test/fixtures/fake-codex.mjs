@@ -20,7 +20,7 @@ async function deviceLogin() {
   recordPid();
   process.stdout.write('Open https://auth.openai.com/codex/device\nEnter this code: ABCD-12345\n');
   const m = process.env.FAKE_LOGIN || 'ok';
-  if (m === 'hang') await hang();
+  if (m === 'hang' || m === 'code') await hang();
   process.exit(m === 'fail' ? 1 : 0);
 }
 

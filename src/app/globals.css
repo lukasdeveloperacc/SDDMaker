@@ -486,6 +486,78 @@ a:visited {
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
 }
+.agent-login-help code {
+  overflow-wrap: anywhere;
+}
+.agent-login-help summary {
+  cursor: pointer;
+}
+.login-console {
+  min-width: 0;
+  margin-block: var(--space-sm);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-ink-secondary);
+  color: var(--color-canvas-soft);
+}
+.login-connection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+  margin-block: var(--space-sm);
+}
+.login-connection-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  font-size: 14px;
+}
+.login-connection-header span,
+.login-connection-input p {
+  color: var(--color-ink-muted);
+}
+.login-console-command,
+.login-console-output {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 14px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.login-console-output {
+  min-height: 120px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.login-connection p {
+  margin-block: var(--space-xs) 0;
+  font-size: 14px;
+}
+.login-console-device,
+.login-console-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+.login-console-input-row .field {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.login-console-input-row {
+  align-items: end;
+}
+.login-console-details summary {
+  cursor: pointer;
+  color: var(--color-ink-muted);
+  font-size: 14px;
+}
+.login-console :focus-visible {
+  outline-color: var(--color-accent-sky);
+}
 
 /* 마크다운 편집기 (왼쪽 입력, 오른쪽 미리보기) */
 .editor-split {

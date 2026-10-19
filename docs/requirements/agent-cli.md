@@ -25,16 +25,16 @@ API 키 없이, SDDMaker가 실행되는 환경의 `claude` CLI와 `codex` CLI�
 
 ### 앱에서 로그인
 
-미로그인 CLI 옆의 **로그인** 버튼을 누르면 서버가 그 CLI의 공식 로그인 명령을 실행한다.
+미로그인 CLI 옆의 **계정 연결** 버튼을 누르면 서버가 그 CLI의 공식 로그인 명령을 실행한다. 기본 화면에는 인증 페이지와 필요한 코드 안내만 보여 준다. **로그인 콘솔 보기**를 펼치면 두 CLI의 stdout·stderr를 개행 없이 전달하고, 출력은 HTML이나 터미널 제어 명령으로 실행하지 않고 텍스트로 보여 준다.
 
 | CLI | 사용자가 하는 일 |
 | --- | --- |
-| Claude Code | 이 컴퓨터의 브라우저에 열린 로그인 페이지에서 구독 계정으로 로그인한다. 명령이 URL을 출력하면 화면에도 링크로 보여 준다 |
-| Codex | 화면에 표시된 URL을 열고 코드를 입력한다 |
+| Claude Code | 인증 페이지를 열고 구독 계정으로 로그인한다. 브라우저가 Authentication code를 보여주면 전체 `code#state`를 앱 입력칸에 붙여넣고 Enter 또는 코드 제출 버튼으로 보낸다 |
+| Codex | 인증 페이지를 열고 앱의 기기 코드를 복사해 OpenAI 인증 페이지에 입력한다. 앱에서 입력 위치를 명시한다 |
 
-로그인 명령이 끝나면 상태를 다시 확인해 결과를 표시한다. 터미널 없는 실행에서 로그인 명령이 동작하지 않으면(코드 붙여넣기 요구 등) 터미널 로그인 안내로 대신한다 (명령은 [1-SYSTEM-ARCHITECTURE.md](../1-SYSTEM-ARCHITECTURE.md#로그인-상태로그인)).
+로그인 명령이 끝나면 상태를 다시 확인해 결과를 표시하고 콘솔·링크·코드를 지운다. 실패 시 이유와 다시 시도를 제공한다. 터미널 직접 로그인 안내는 접어 두고 필요할 때 펼친다 (명령은 [1-SYSTEM-ARCHITECTURE.md](../1-SYSTEM-ARCHITECTURE.md#로그인-상태로그인)).
 
-두 CLI 모두 앱 전용 저장소를 쓰므로, 호스트 터미널에서 이미 로그인해 있어도 SDDMaker에서 한 번 더 로그인해야 한다. 호스트 로그인 파일을 공유하지 않으며 컨테이너 안에서 독립적으로 인증할 수 있다. Docker의 대화형 로그인은 컨테이너 안에서 실행하고, 인증 URL은 사용자의 브라우저에서 연다. Claude가 콜백 대신 코드 입력을 요구하면 대화형 터미널 로그인 안내를 사용한다. 화면에 전용 저장소와 명령 실행 환경을 함께 안내한다.
+두 CLI 모두 앱 전용 저장소를 쓰므로, 호스트 터미널에서 이미 로그인해 있어도 SDDMaker에서 한 번 더 로그인해야 한다. 호스트 로그인 파일을 공유하지 않으며 컨테이너 안에서 독립적으로 인증할 수 있다. 인증 URL은 사용자의 브라우저에서 열고, Claude의 반환 코드는 앱을 통해 같은 컨테이너의 CLI로 전달한다. 터미널 직접 로그인은 컨테이너 안에서 실행한다.
 
 ## 규칙
 
@@ -45,6 +45,7 @@ API 키 없이, SDDMaker가 실행되는 환경의 `claude` CLI와 `codex` CLI�
 - **구독만 허용**: 구독이 아닌 방식(Claude `authMethod`가 `claude.ai`가 아님, Codex가 ChatGPT 로그인이 아님)으로 로그인돼 있으면 실행하지 않고 구독 로그인을 안내한다. 로그인 버튼도 구독 로그인만 실행한다 (Claude `--claudeai`).
 - **인증 정보는 CLI만 다룬다**: 앱은 공식 CLI 로그인 명령을 실행할 뿐, 자체 OAuth를 구현하지 않는다. 토큰은 CLI가 자기 저장소에 보관하고, 앱은 읽거나 저장하지 않는다.
 - **로그인 출력은 남기지 않는다**: 로그인 명령이 출력한 URL·코드는 화면에만 보여 주고 DB·로그에 남기지 않는다.
+- **반환 코드 전달**: Claude 로그인 세션별 식별자를 확인한 뒤 열린 stdin으로 한 줄을 한 번만 전달한다. 이전·종료·취소 세션과 중복 제출은 거절한다. 입력은 가리고 전송 후 비우며 DB·서버 로그·콘솔 출력에 복사하지 않는다. 범용 셸 입력은 받지 않는다.
 - **로그인 실행 수**: CLI마다 로그인은 한 번에 하나만 돈다. 진행 중 재요청은 409. 사용자가 취소하거나 10분이 지나면 로그인 프로세스를 종료한다.
 - **연결 끊김**: 브라우저 연결이 끊기면 자식 프로세스(실행·로그인)를 종료하고 결과를 저장하지 않는다.
 - **종료 정리**: 취소·시간 초과·서버 종료 시 CLI가 만든 하위 프로세스도 그룹 단위로 정리한다. 종료 신호를 무시하면 강제 종료한다 ([종료 처리](../1-SYSTEM-ARCHITECTURE.md#서버-공유-상태)).
@@ -76,6 +77,8 @@ API 키 없이, SDDMaker가 실행되는 환경의 `claude` CLI와 `codex` CLI�
 | 이벤트 | 데이터 | 의미 |
 | --- | --- | --- |
 | `prompt` | `{ url, code? }` | 사용자가 열 URL (Codex는 입력할 코드 포함) |
+| `output` | `{ text }` | 두 CLI의 로그인 출력. 개행 없는 프롬프트도 즉시 전달 |
+| `input_ready` | `{ loginId }` | Claude 반환 코드를 받을 현재 세션 식별자 |
 | `done` | `{ loggedIn }` | 로그인 명령 종료 후 상태 확인 결과 |
 | `error` | `{ code, message }` | `login_failed` 또는 `cli_not_found` |
 
@@ -85,6 +88,7 @@ API 키 없이, SDDMaker가 실행되는 환경의 `claude` CLI와 `codex` CLI�
 | --- | --- |
 | `GET /api/agents` | `{ claude: { installed, loggedIn, subscription, loginCommand }, codex: { installed, loggedIn, subscription, loginCommand } }`. `loginCommand`는 터미널 로그인 안내 문구 |
 | `POST /api/agents/:agent/login` | SSE — 로그인 진행 (`prompt` → `done`) |
+| `PUT /api/agents/claude/login` | `{ loginId, code }`를 받아 CLI stdin으로 전달, 성공 204. 형식 오류 400, 입력 불가·다른 세션·중복 제출 409 `invalid_state` |
 | `DELETE /api/agents/:agent/login` | 진행 중인 로그인 취소 |
 
 ## 완료·테스트 기준

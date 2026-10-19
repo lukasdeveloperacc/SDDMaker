@@ -2,8 +2,8 @@ import { isAgentName } from '@/lib/contract';
 import { AgentError } from '@/server/agents/exec';
 import { getAdapter } from '@/server/agents';
 import type { AgentAdapter } from '@/server/agents/types';
-import { acquireLogin, cancelLogin, releaseLogin } from '@/server/runtime';
-import { apiError } from '@/server/http';
+import { acquireLogin, cancelLogin, releaseLogin, setLoginCodeInput, submitLoginCode } from '@/server/runtime';
+import { apiError, readJson } from '@/server/http';
 import { createSse } from '@/server/sse';
 
 export const runtime = 'nodejs';
@@ -37,6 +37,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
       try {
         await adapter.login({
           onPrompt: (p) => sse.send('prompt', p),
+          onOutput: (text) => sse.send('output', { text }),
+          onCodeInput: (submit) => {
+            const loginId = setLoginCodeInput(agent, controller, submit);
+            if (loginId) sse.send('input_ready', { loginId });
+          },
           signal: controller.signal,
           timeoutMs: LOGIN_TIMEOUT_MS,
         });
@@ -58,6 +63,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
   })();
 
   return sse.response;
+}
+
+export async function PUT(req: Request, ctx: { params: Promise<{ agent: string }> }) {
+  const { agent } = await ctx.params;
+  if (agent !== 'claude') return apiError(400, 'invalid_input', '인증 코드 입력은 Claude 로그인에서만 사용합니다');
+  const body = await readJson(req);
+  const code = typeof body?.code === 'string' ? body.code.trim() : '';
+  if (!/^[^\s#]+#[^\s#]+$/.test(code) || code.length > 4096 || /\p{Cc}/u.test(code) || typeof body?.loginId !== 'string') {
+    return apiError(400, 'invalid_input', '브라우저에서 받은 인증 코드 전체를 한 줄로 붙여넣으세요');
+  }
+  if (!submitLoginCode(agent, body.loginId, code)) {
+    return apiError(409, 'invalid_state', '코드를 받을 수 없는 로그인입니다. 취소 후 다시 로그인하세요');
+  }
+  return new Response(null, { status: 204 });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ agent: string }> }) {

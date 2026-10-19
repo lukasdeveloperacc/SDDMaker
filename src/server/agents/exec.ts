@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
+import { stripVTControlCharacters } from 'node:util';
 import type { AgentName, AgentErrorCode } from '@/lib/contract';
 import { agentWorkdir, cliPath, claudeHome, codexHome } from '../env';
 import { trackChild, untrackChild } from '../runtime';
+import type { LoginInput } from './types';
 
 export class AgentError extends Error {
   constructor(public code: AgentErrorCode, message: string) {
@@ -73,6 +75,8 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
   signal: AbortSignal;
   onLine?: (line: string) => void;
   onStderrLine?: (line: string) => void; // 로그인 안내가 표준 오류로 나올 때 쓴다
+  onOutput?: (text: string) => void;
+  onCodeInput?: (submit: (code: string) => boolean) => void;
   timeoutMs?: number;
   timeoutError?: Error; // 시간 초과 시 reject할 오류는 부르는 쪽이 정한다
 }): Promise<SpawnResult> {
@@ -121,12 +125,13 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
 
     // 자식이 입력을 읽기 전에 끝나면 EPIPE가 나는데, 서버 프로세스가 죽지 않게 삼킨다.
     child.stdin.on('error', () => {});
-    child.stdin.end(opts.stdin ?? '');
+    if (!opts.onCodeInput) child.stdin.end(opts.stdin ?? '');
 
     const emitLine = (line: string) => opts.onLine?.(line.endsWith('\r') ? line.slice(0, -1) : line);
 
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
+      opts.onOutput?.(chunk);
       if (!opts.onLine) return;
       lineBuf += chunk;
       let i: number;
@@ -139,8 +144,10 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
     child.stderr.on('data', (chunk: Buffer) => {
       stderr = Buffer.concat([stderr, chunk]);
       if (stderr.length > STDERR_TAIL_BYTES) stderr = stderr.subarray(-STDERR_TAIL_BYTES);
+      const text = errDecoder.write(chunk);
+      opts.onOutput?.(text);
       if (opts.onStderrLine) {
-        errLineBuf += errDecoder.write(chunk);
+        errLineBuf += text;
         let i: number;
         while ((i = errLineBuf.indexOf('\n')) !== -1) {
           opts.onStderrLine(errLineBuf.slice(0, i).replace(/\r$/, ''));
@@ -175,6 +182,11 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
         else resolve({ code, stderr: stderr.toString('utf8') });
       });
     });
+    opts.onCodeInput?.((code) => {
+      if (settled || failure || opts.signal.aborted || child.stdin.destroyed || child.stdin.writableEnded) return false;
+      child.stdin.end(code + '\n');
+      return true;
+    });
   });
 }
 
@@ -183,11 +195,7 @@ const URL_RE = /https?:\/\/[^\s"'<>]+/;
 const CODE_RE = /\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/;
 
 // 로그인 CLI를 실행하고 URL·코드 안내를 onPrompt로 넘긴다. 출력 원문은 저장하거나 로그에 남기지 않는다.
-export async function runLogin(agent: AgentName, args: string[], i: {
-  onPrompt: (p: { url: string; code?: string }) => void;
-  signal: AbortSignal;
-  timeoutMs?: number;
-}): Promise<void> {
+export async function runLogin(agent: AgentName, args: string[], i: LoginInput): Promise<void> {
   let url: string | null = null;
   let code: string | undefined;
   const scan = (raw: string) => {
@@ -206,6 +214,8 @@ export async function runLogin(agent: AgentName, args: string[], i: {
       signal: i.signal,
       onLine: scan,
       onStderrLine: scan,
+      onOutput: (text) => i.onOutput?.(stripVTControlCharacters(text)),
+      onCodeInput: agent === 'claude' ? i.onCodeInput : undefined,
       timeoutMs: i.timeoutMs ?? 600_000,
       timeoutError: new AgentError('login_failed', '시간 초과'),
     });

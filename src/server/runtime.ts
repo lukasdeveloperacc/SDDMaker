@@ -1,4 +1,5 @@
 import type { AgentName, RunKind } from '@/lib/contract';
+import { randomUUID } from 'node:crypto';
 
 interface RunEntry {
   kind: RunKind;
@@ -10,7 +11,7 @@ interface RunEntry {
 
 interface RuntimeState {
   runs: Map<number, RunEntry>;
-  logins: Map<AgentName, AbortController>;
+  logins: Map<AgentName, { controller: AbortController; id: string; submit?: (code: string) => boolean }>;
 }
 
 // 개발 서버가 모듈을 다시 읽어도 실행 잠금과 자식 목록이 사라지지 않게 globalThis에 둔다.
@@ -67,16 +68,32 @@ export async function cancelRun(projectId: number, waitMs = 5000): Promise<void>
 export function acquireLogin(agent: AgentName): AbortController | null {
   if (state.logins.has(agent)) return null;
   const controller = new AbortController();
-  state.logins.set(agent, controller);
+  state.logins.set(agent, { controller, id: randomUUID() });
   return controller;
 }
 
 export function releaseLogin(agent: AgentName, controller: AbortController): void {
-  if (state.logins.get(agent) === controller) state.logins.delete(agent);
+  if (state.logins.get(agent)?.controller === controller) state.logins.delete(agent);
 }
 
 export function cancelLogin(agent: AgentName): void {
-  state.logins.get(agent)?.abort();
+  state.logins.get(agent)?.controller.abort();
+}
+
+export function setLoginCodeInput(agent: AgentName, controller: AbortController, submit: (code: string) => boolean): string | null {
+  const entry = state.logins.get(agent);
+  if (!entry || entry.controller !== controller || controller.signal.aborted) return null;
+  entry.submit = submit;
+  return entry.id;
+}
+
+export function submitLoginCode(agent: AgentName, id: string, code: string): boolean {
+  const entry = state.logins.get(agent);
+  if (!entry || entry.id !== id || entry.controller.signal.aborted || !entry.submit) return false;
+  if (!entry.submit(code)) return false;
+  // 한 세션에 한 줄만 보낸다. 이전 요청의 재전송이 다음 입력으로 넘어가지 않게 한다.
+  entry.submit = undefined;
+  return true;
 }
 
 // 자식 프로세스 그룹(pgid = 자식 pid)을 추적한다. 앱이 꺼질 때 남은 CLI를 끝내려고 쓴다.

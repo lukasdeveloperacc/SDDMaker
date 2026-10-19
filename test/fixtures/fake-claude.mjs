@@ -2,6 +2,7 @@
 // 가짜 Claude Code CLI. 출력 모양은 docs/1-SYSTEM-ARCHITECTURE.md "외부 연동"의 확인된 형식을 따른다.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { createInterface } from 'node:readline';
 import { answerFor, envReport, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
 
 const argv = process.argv.slice(2);
@@ -24,6 +25,17 @@ async function login() {
   recordPid();
   process.stdout.write('Opening browser: https://claude.ai/oauth/fake?x=1\n');
   const m = process.env.FAKE_LOGIN || 'ok';
+  if (m === 'code') {
+    const input = createInterface({ input: process.stdin });
+    process.stderr.write('Paste code here if prompted > ');
+    input.once('line', (line) => {
+      const ok = line.trim() === 'test-code#state-value';
+      process.stdout.write(ok ? 'Login successful\n' : 'Invalid code\n');
+      // 명령이 입력 EOF까지 기다리는 경우도 종료되어야 한다.
+      input.once('close', () => process.exit(ok ? 0 : 1));
+    });
+    return;
+  }
   if (m === 'hang') await hang();
   process.exit(m === 'fail' ? 1 : 0);
 }

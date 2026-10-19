@@ -12,6 +12,8 @@ export interface RunInput {
 export interface RunResult { text: string; sessionId: string }
 export interface LoginInput {
   onPrompt: (p: { url: string; code?: string }) => void;
+  onOutput?: (text: string) => void;
+  onCodeInput?: (submit: (code: string) => boolean) => void;
   signal: AbortSignal;
   timeoutMs?: number; // 기본 600_000
 }
