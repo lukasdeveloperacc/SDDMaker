@@ -28,5 +28,6 @@ export interface AgentAdapter {
   run(i: RunInput): Promise<RunResult>;
   status(): Promise<Omit<AgentStatus, 'loginCommand'>>;
   login(i: LoginInput): Promise<void>; // 종료 코드 0이면 resolve. 실패·시간 초과·취소는 AgentError('login_failed'), 실행 파일 없음은 'cli_not_found'
+  logout(signal: AbortSignal): Promise<void>;
   loginCommand(): string; // 터미널 로그인 안내 문구
 }

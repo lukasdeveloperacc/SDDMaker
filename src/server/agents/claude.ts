@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, shellQuote, spawnCli } from './exec';
+import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, runLogout, shellQuote, spawnCli } from './exec';
 import { claudeHome } from '../env';
 import type { AgentAdapter, RunInput, RunResult } from './types';
 
@@ -86,5 +86,9 @@ export const claudeAdapter: AgentAdapter = {
 
   loginCommand() {
     return `CLAUDE_CONFIG_DIR=${shellQuote(claudeHome())} claude auth login --claudeai`;
+  },
+
+  logout(signal) {
+    return runLogout('claude', ['auth', 'logout'], signal);
   },
 };

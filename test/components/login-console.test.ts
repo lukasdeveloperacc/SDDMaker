@@ -63,6 +63,10 @@ beforeEach(() => {
       const status = { installed: true, loggedIn, subscription: loggedIn, loginCommand: 'scoped login command', loginRunning };
       return new Response(JSON.stringify({ claude: status, codex: status }));
     }
+    if (method === 'POST' && url.endsWith('/logout')) {
+      loggedIn = false;
+      return new Response(null, { status: 204 });
+    }
     if (method === 'POST') {
       return new Response(new ReadableStream<Uint8Array>({ start(controller) {
         const session = { controller, closed: false };
@@ -82,6 +86,40 @@ afterEach(async () => {
   });
   container.remove();
   vi.unstubAllGlobals();
+});
+
+describe('에이전트 연결 해제', () => {
+  it.each(['claude', 'codex'] as const)('%s의 연결을 해제한 뒤 상태를 다시 읽고 재연결을 제공한다', async (agent) => {
+    loggedIn = true;
+    await render(false);
+    const label = agent === 'claude' ? 'Claude Code' : 'Codex';
+    const disconnect = container.querySelector(`[aria-label="${label} 연결 해제"]`) as HTMLButtonElement;
+    expect(disconnect).not.toBeNull();
+    await act(async () => disconnect.click());
+    expect(requests).toContainEqual({ url: `/api/agents/${agent}/logout`, method: 'POST', body: undefined });
+    expect(requests.at(-1)?.url).toBe('/api/agents');
+    expect(container.textContent).not.toContain('로그인됨');
+    expect(button('계정 연결', agent === 'claude' ? 0 : 1).disabled).toBe(false);
+    expect(requests.some((r) => r.method === 'DELETE')).toBe(false);
+  });
+
+  it('해제 중 중복 조작을 막고 실패하면 연결 상태와 재시도를 유지한다', async () => {
+    loggedIn = true;
+    let fail!: () => void;
+    intercept = (url) => url.endsWith('/logout') ? new Promise((resolve) => {
+      fail = () => resolve(new Response(JSON.stringify({ code: 'agent_failed', message: '연결을 해제하지 못했습니다.' }), { status: 500 }));
+    }) : undefined;
+    await render(false);
+    await act(async () => button('연결 해제').click());
+    expect(button('해제 중…').disabled).toBe(true);
+    expect(button('연결 해제').disabled).toBe(true);
+    expect(button('터미널').disabled).toBe(true);
+    await act(async () => fail());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('연결을 해제하지 못했습니다.');
+    expect(container.textContent).toContain('로그인됨');
+    expect(button('연결 해제').disabled).toBe(false);
+    expect(button('터미널').disabled).toBe(false);
+  });
 });
 
 describe('에이전트 로그인 터미널', () => {

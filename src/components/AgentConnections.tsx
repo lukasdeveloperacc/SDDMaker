@@ -43,6 +43,7 @@ export function AgentConnections() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [login, setLogin] = useState<LoginState | null>(null);
   const [cancelling, setCancelling] = useState<AgentName | null>(null);
+  const [disconnecting, setDisconnecting] = useState<AgentName | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const attemptRef = useRef(0);
 
@@ -159,7 +160,23 @@ export function AgentConnections() {
     if (await cancelLogin(agent)) await startLogin(agent);
   }
 
-  const busy = login?.running === true || cancelling !== null;
+  async function disconnect(agent: AgentName) {
+    setDisconnecting(agent);
+    setLoadError(null);
+    try {
+      await api('POST', `/api/agents/${agent}/logout`);
+      setLogin((prev) => prev?.agent === agent ? null : prev);
+      setCode('');
+      setInputError(null);
+      await refreshAgents();
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '연결을 해제하지 못했습니다.');
+    } finally {
+      setDisconnecting(null);
+    }
+  }
+
+  const busy = login?.running === true || cancelling !== null || disconnecting !== null;
 
   function selectTab(next: 'guided' | 'terminal') {
     if (busy) return;
@@ -244,6 +261,12 @@ export function AgentConnections() {
                 </div>
                 <div className="connection-actions">
                   {s ? statusBadge(s) : <Badge tone="neutral">확인 중</Badge>}
+                  {s?.loggedIn && !elsewhere && !loginHere?.running && (
+                    <Button variant="utility" disabled={busy} aria-label={`${LABEL[a]} 연결 해제`}
+                      title="SDDMaker에 저장된 로그인만 해제합니다." onClick={() => void disconnect(a)}>
+                      {disconnecting === a ? '해제 중…' : '연결 해제'}
+                    </Button>
+                  )}
                   {showLogin && !elsewhere && !loginHere?.running && (
                     <Button variant="utility" disabled={busy} onClick={() => void startLogin(a)}>계정 연결</Button>
                   )}
@@ -279,7 +302,7 @@ export function AgentConnections() {
                   {loginHere.error && (
                     <Notice tone="error" title={loginHere.error.help.title}>
                       <p className="caption">{loginHere.error.message}</p>
-                      <div><Button variant="utility" onClick={() => void startLogin(a)}>다시 시도</Button></div>
+                      <div><Button variant="utility" disabled={busy} onClick={() => void startLogin(a)}>다시 시도</Button></div>
                     </Notice>
                   )}
                 </div>

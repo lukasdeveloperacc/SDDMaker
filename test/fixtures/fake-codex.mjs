@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // 가짜 Codex CLI. 이벤트 모양은 docs/1-SYSTEM-ARCHITECTURE.md "외부 연동"의 확인된 형식을 따른다.
 import { createInterface } from 'node:readline';
-import { answerFor, envReport, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
+import fs from 'node:fs';
+import { answerFor, envReport, logout, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
 
 const argv = process.argv.slice(2);
 // 이벤트 루프가 비지 않게 타이머를 붙여 둔다 (그러지 않으면 Node가 자식을 그냥 끝낸다).
 const hang = () => new Promise(() => { setInterval(() => {}, 1000); });
 
 function loginStatus() {
-  const m = process.env.FAKE_AUTH || 'logged_in';
+  const m = process.env.FAKE_LOGOUT_FILE && fs.existsSync(process.env.FAKE_LOGOUT_FILE) ? 'logged_out' : process.env.FAKE_AUTH || 'logged_in';
   if (m === 'logged_out') {
     process.stdout.write('Not logged in\n');
     process.exit(1);
@@ -78,6 +79,7 @@ async function exec() {
 }
 
 if (argv[0] === 'login' && argv[1] === 'status') loginStatus();
+else if (argv[0] === 'logout') logout();
 else if (argv[0] === 'login') deviceLogin();
 else if (argv[0] === 'exec') exec();
 else process.exit(2);

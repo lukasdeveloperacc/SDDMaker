@@ -1,5 +1,5 @@
 import { agentWorkdir, codexHome } from '../env';
-import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, shellQuote, spawnCli } from './exec';
+import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, runLogout, shellQuote, spawnCli } from './exec';
 import type { AgentAdapter, RunInput, RunResult } from './types';
 
 interface CodexEvent {
@@ -92,5 +92,9 @@ export const codexAdapter: AgentAdapter = {
 
   loginCommand() {
     return `CODEX_HOME=${shellQuote(codexHome())} codex login --device-auth`;
+  },
+
+  logout(signal) {
+    return runLogout('codex', ['logout'], signal);
   },
 };

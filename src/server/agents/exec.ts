@@ -191,6 +191,15 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
   });
 }
 
+export async function runLogout(agent: AgentName, args: string[], signal: AbortSignal): Promise<void> {
+  const result = await spawnCli(agent, args, {
+    signal,
+    timeoutMs: 15_000,
+    timeoutError: new AgentError('agent_failed', '연결 해제 시간이 초과되었습니다'),
+  });
+  if (result.code !== 0) throw new AgentError('agent_failed', '연결 해제에 실패했습니다');
+}
+
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const URL_RE = /https?:\/\/[^\s"'<>]+/;
 const CODE_RE = /\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/;

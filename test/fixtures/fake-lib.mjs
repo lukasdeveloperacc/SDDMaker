@@ -18,6 +18,23 @@ export function recordPid() {
   if (process.env.FAKE_PID_FILE) fs.writeFileSync(process.env.FAKE_PID_FILE, String(process.pid));
 }
 
+export async function logout() {
+  recordPid();
+  if (process.env.FAKE_LOGOUT === 'hang') await new Promise(() => setInterval(() => {}, 1000));
+  if (process.env.FAKE_LOGOUT === 'fail') {
+    process.stderr.write('private authentication details\n');
+    process.exit(1);
+  }
+  if (process.env.FAKE_LOGOUT_FILE) {
+    fs.writeFileSync(process.env.FAKE_LOGOUT_FILE, JSON.stringify({
+      args: process.argv.slice(2),
+      claudeHome: process.env.CLAUDE_CONFIG_DIR,
+      codexHome: process.env.CODEX_HOME,
+    }));
+  }
+  process.exit(0);
+}
+
 export function newId() {
   return randomUUID();
 }

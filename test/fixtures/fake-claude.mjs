@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createInterface } from 'node:readline';
-import { answerFor, envReport, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
+import { answerFor, envReport, logout, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
 
 const argv = process.argv.slice(2);
 // FAKE_IGNORE_TERM=1이면 SIGTERM을 무시한다 (정리 로직이 SIGKILL까지 가는지 확인용).
@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hang = () => new Promise(() => { setInterval(() => {}, 1000); });
 
 function authStatus() {
-  const m = process.env.FAKE_AUTH || 'logged_in';
+  const m = process.env.FAKE_LOGOUT_FILE && fs.existsSync(process.env.FAKE_LOGOUT_FILE) ? 'logged_out' : process.env.FAKE_AUTH || 'logged_in';
   if (m === 'logged_out') process.stdout.write('{"loggedIn":false,"authMethod":"none"}\n');
   else if (m === 'api_key') process.stdout.write('{"loggedIn":true,"authMethod":"api_key"}\n');
   else process.stdout.write('{"loggedIn":true,"authMethod":"claude.ai"}\n');
@@ -109,5 +109,6 @@ async function run() {
 }
 
 if (argv[0] === 'auth' && argv[1] === 'status') authStatus();
+else if (argv[0] === 'auth' && argv[1] === 'logout') logout();
 else if (argv[0] === 'auth' && argv[1] === 'login') login();
 else run();

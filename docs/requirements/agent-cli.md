@@ -22,6 +22,7 @@ API 키 없이, SDDMaker가 실행되는 환경의 `claude` CLI와 `codex` CLI�
 
 - `/settings/agents`의 에이전트 연결 화면에 CLI별 상태(미설치 / 미로그인 / 구독 아닌 로그인 / 로그인됨)를 보여 준다. 작업 화면에는 로그인 UI 없이 에이전트 Select만 둔다.
 - 실행 직전에도 상태를 확인한다. 로그인됨이 아니면 실행하지 않고 에이전트 연결 화면으로 이동할 링크를 보여 준다.
+- 로그인된 계정에는 **연결 해제**를 제공한다. 공식 CLI 로그아웃으로 SDDMaker 전용 인증만 해제하고 상태를 다시 읽는다. 프로젝트와 문서는 보존한다. 진행 중 로그인 취소와 계정 로그아웃은 별도 동작이며, 같은 CLI의 인증 작업은 동시에 실행하지 않는다.
 
 ### 앱에서 로그인
 
@@ -92,6 +93,7 @@ Codex 기기 로그인이 차단되면 ChatGPT 보안 설정에서 기기 코드
 | `PUT /api/agents/:agent/login` | `{ loginId, input }`으로 로그인 CLI에 한 줄 전달 (빈 Enter 허용), 성공 204. 형식 오류 400, 종료·취소·다른 세션 409 `invalid_state` |
 | `PUT /api/agents/claude/login` | `{ loginId, code }`를 받아 CLI stdin으로 전달, 성공 204. 형식 오류 400, 입력 불가·다른 세션·중복 제출 409 `invalid_state` |
 | `DELETE /api/agents/:agent/login` | 진행 중인 로그인 취소 |
+| `POST /api/agents/:agent/logout` | 공식 CLI로 SDDMaker 전용 로그인 해제. 성공 204, 인증 작업 진행 중 409, 실패 시 오류 표시와 재시도 |
 
 ## 완료·테스트 기준
 
