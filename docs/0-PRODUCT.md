@@ -20,9 +20,9 @@
 
 | 기능 | 요구사항 |
 | --- | --- |
-| 프로젝트 생성·목록·유지, 디자인 문서 입력 | [requirements/project.md](requirements/project.md) |
-| 초기 인터뷰 (건너뛰기 가능) | [requirements/interview.md](requirements/interview.md) |
-| 문서 세트 단계별 생성·편집·피드백·승인 | [requirements/documents.md](requirements/documents.md) |
+| 프로젝트 생성·목록·유지·삭제, 디자인 문서 입력 | [requirements/project.md](requirements/project.md) |
+| 초기 인터뷰 (시작 전·도중 건너뛰기 가능) | [requirements/interview.md](requirements/interview.md) |
+| 문서 세트 단계별 생성·편집·피드백·승인·승인 취소 | [requirements/documents.md](requirements/documents.md) |
 | 화면 정의서 (HTML 목업, 컴포넌트 선택·그리기 주석으로 수정) | [requirements/screens.md](requirements/screens.md) |
 | 에이전트 연동 (구독 로그인 CLI, 단계별 선택) | [requirements/agent-cli.md](requirements/agent-cli.md) |
 | 승인 문서 zip 내보내기 | [requirements/export.md](requirements/export.md) |
@@ -37,8 +37,8 @@ SDDMaker 자신의 [docs 규칙](AGENTS.md)과 같은 구조로 만든다. 받�
 | `requirements/<기능>.md` | `0-PRODUCT.md`의 기능 목록마다 하나씩 에이전트가 생성 |
 | `screens/<화면>.html` | `4-USERFLOW.md`의 화면 목록마다 하나씩 에이전트가 생성 (화면이 있는 앱만) |
 | `changes/001-mvp.md` | 에이전트가 생성 (MVP 변경 기록) |
-| `2-DESIGN.md` | 생성하지 않는다. 사용자가 넣은 디자인 문서를 그대로 쓴다 (선택) |
-| `AGENTS.md` (문서 규칙) | 생성하지 않는다. SDDMaker에 포함된 규칙 파일을 그대로 넣는다 |
+| `2-DESIGN.md` | 생성하지 않는다. 사용자가 넣은 디자인 문서를 그대로 쓴다. 가진 것이 없으면 [getdesign.md](https://getdesign.md/)에서 골라 붙여 넣는다. 화면이 있는 앱은 필요하다 |
+| `AGENTS.md` (문서 규칙) | 생성하지 않는다. SDDMaker의 [docs 규칙](AGENTS.md)을 그대로 넣는다 |
 
 ## 제외 범위 (MVP)
 
@@ -48,15 +48,17 @@ SDDMaker 자신의 [docs 규칙](AGENTS.md)과 같은 구조로 만든다. 받�
 - 기존 docs를 가져와 변경 기록(`changes/002-…`)과 관련 문서를 갱신하는 기능 — MVP는 초기 문서 세트만 만든다
 - 문서 버전 히스토리 (직전 내용 1개 되돌리기만 지원)
 - 문서 구성·규칙·프롬프트 편집
-- 디자인 문서 생성
+- 디자인 문서 생성·자동 선택 (사용자가 골라 붙여 넣는다)
 - 마크다운 문서 일부만 골라 수정하는 기능 (화면 정의서는 컴포넌트 단위 수정을 지원한다)
+- 화면 정의서 그림 주석의 이미지 첨부 (그린 영역 좌표와 겹치는 컴포넌트만 보낸다)
 - 사용자 폴더에 직접 파일 쓰기 (내보내기는 zip 다운로드만)
 - 내보낸 문서로 에이전트가 코드를 구현하는 기능
 
 ## 제품 공통 정책
 
-- **로컬 전용**: 앱은 사용자 컴퓨터에서만 실행한다. 에이전트 인증은 공식 CLI가 맡는다. 앱은 CLI 로그인 명령을 대신 실행해 줄 뿐 토큰을 다루지 않는다.
+- **로컬 전용**: 앱은 사용자 컴퓨터에서만, `127.0.0.1`에서만 실행한다. 에이전트 인증은 공식 CLI가 맡는다. 앱은 CLI 로그인 명령을 대신 실행해 줄 뿐 토큰을 다루지 않는다.
+- **구독만 사용**: API 키로 과금되는 실행을 하지 않는다. 구독이 아닌 방식으로 로그인된 CLI는 실행하지 않는다.
 - **데이터 원본은 앱 DB**: 프로젝트·인터뷰·문서는 앱 내부 SQLite에 저장한다. 파일은 내보낼 때만 만든다.
-- **앞 단계 승인 후 다음 단계**: 앞 문서를 승인해야 다음 문서를 생성할 수 있다. 승인된 앞 문서들이 다음 문서 생성의 입력이 된다.
+- **앞 단계 승인 후 다음 단계**: 앞 문서를 승인해야 다음 문서를 생성할 수 있다. 승인된 앞 문서들이 다음 문서 생성의 입력이 된다. 승인한 문서는 승인을 취소하고 다시 고칠 수 있다.
 - **생성 문서도 docs 규칙을 따른다**: 모든 생성 프롬프트에 문서 규칙을 넣는다. 정해지지 않은 내용을 추측으로 채우지 않고, 구현 전 문서에는 `예정`을 표시한다.
-- **에이전트는 문서만 쓴다**: 문서 생성 중 에이전트는 텍스트만 돌려주고, 파일 쓰기·명령 실행을 하지 않는다.
+- **에이전트는 문서만 쓴다**: 에이전트는 텍스트만 돌려주고 파일을 쓰지 않는다. 사용자 프로젝트와 떨어진 빈 작업 폴더에서 실행한다 (Codex는 읽기 명령은 실행할 수 있다).

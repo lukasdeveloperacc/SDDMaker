@@ -1,2 +1,4 @@
 .omc*
 .omx*
+data/
+.env*.local
