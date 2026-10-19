@@ -1,0 +1,54 @@
+# 초기 인터뷰
+
+> 상태: 예정 ([changes/001-mvp.md](../changes/001-mvp.md))
+
+## 목적
+
+문서를 만들기 전에 에이전트가 질문으로 요구사항을 모아, `0-PRODUCT.md` 이후 모든 문서의 입력이 될 요약을 만든다. 인터뷰는 선택 사항이다.
+
+## 동작
+
+1. 사용자가 에이전트(`claude` | `codex`)를 고르고 인터뷰를 시작한다. 에이전트가 아이디어를 바탕으로 첫 질문을 한다.
+2. 에이전트는 **한 번에 질문 하나**만 한다. 사용자가 답하면 같은 CLI 세션으로 다음 질문이 이어진다.
+3. 에이전트가 충분하다고 판단하면 요약을 만들자고 제안하는 응답을 보낸다.
+4. 사용자는 언제든 **인터뷰 완료**를 눌러 끝낼 수 있다. 완료하면 에이전트가 대화 전체를 요약한다.
+5. 요약은 편집기에서 직접 수정할 수 있다. **승인**하면 `0-PRODUCT.md` 단계가 열린다.
+6. **건너뛰기**: 인터뷰를 시작하지 않고 건너뛰면 아이디어만으로 `0-PRODUCT.md`를 만든다.
+
+에이전트 질문과 요약은 스트리밍으로 표시한다 ([agent-cli.md](agent-cli.md)).
+
+## 규칙
+
+- 인터뷰 에이전트는 시작할 때 정하고, 인터뷰 중에는 바꾸지 않는다. CLI 세션이 에이전트별로 따로이기 때문이다.
+- 상태 전이: (없음) → `active` → `summarized` → `approved`, 또는 (없음) → `skipped`.
+- `0-PRODUCT.md` 생성 조건: 인터뷰가 `approved` 또는 `skipped`.
+- 문서 생성 프롬프트에는 대화 원문이 아니라 승인된 요약만 넣는다.
+
+## 예외
+
+| 상황 | 처리 |
+| --- | --- |
+| CLI 미설치·미로그인 | [agent-cli.md](agent-cli.md)의 안내 표시. 인터뷰 상태는 바뀌지 않는다 |
+| 답변 처리 중 에이전트 실패 | 사용자 답변은 저장하고 에러를 표시한다. 같은 답변으로 다시 요청할 수 있다 |
+| 진행 중 앱 종료 | 메시지와 세션 ID가 남아 있어 이어서 답할 수 있다 |
+| 이미 처리 중인데 또 요청 | 409 |
+
+## API (예정)
+
+스트리밍 응답의 이벤트 형식은 [agent-cli.md](agent-cli.md).
+
+| 메서드·경로 | 요청 | 응답 |
+| --- | --- | --- |
+| `POST /api/projects/:id/interview` | `{ agent }` | SSE — 첫 질문 |
+| `POST /api/projects/:id/interview/messages` | `{ content }` | SSE — 다음 질문 |
+| `POST /api/projects/:id/interview/summary` | — | SSE — 요약 생성 (`summarized`) |
+| `PUT /api/projects/:id/interview/summary` | `{ summary }` | 저장된 요약 |
+| `POST /api/projects/:id/interview/approve` | — | `approved` |
+| `POST /api/projects/:id/interview/skip` | — | `skipped` (시작 전에만) |
+
+## 완료·테스트 기준
+
+- [ ] Claude로 인터뷰를 시작하면 질문이 하나씩 스트리밍되고, 답하면 같은 세션으로 다음 질문이 온다.
+- [ ] 인터뷰 완료 후 요약을 수정·승인하면 `0-PRODUCT.md` 생성이 가능해진다.
+- [ ] 건너뛰기 후 아이디어만으로 `0-PRODUCT.md`를 생성할 수 있다.
+- [ ] 인터뷰 도중 앱을 재시작해도 이어서 답할 수 있다.
