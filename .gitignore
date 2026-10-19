@@ -2,3 +2,7 @@
 .omx*
 data/
 .env*.local
+inprogress/
+node_modules/
+.next/
+*.tsbuildinfo

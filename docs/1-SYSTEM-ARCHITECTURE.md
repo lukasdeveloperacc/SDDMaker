@@ -1,6 +1,6 @@
 # 시스템 아키텍처
 
-> 상태: 예정 — 코드 없음. 아래는 MVP에서 확정한 구조다. 구현 후 실제 경로·명령으로 갱신한다 ([changes/001-mvp.md](changes/001-mvp.md)).
+> 상태: 구현됨 — 자동 테스트·가짜 CLI 검증 완료. 실제 구독 로그인 검증은 남아 있다 ([changes/001-mvp.md](changes/001-mvp.md)).
 
 ## 기술 스택
 
@@ -12,7 +12,7 @@
 | 스트리밍 | Server-Sent Events | 서버→브라우저 단방향 출력이면 충분하다. |
 | 문서 편집 | 마크다운 텍스트 편집 + 미리보기 | 문서가 마크다운이다. |
 | 화면 정의서 | 스크립트를 막은 iframe 미리보기 + 브라우저 내장 `DOMParser` | 에이전트가 만든 HTML을 실행하지 않고 보여 주고, 컴포넌트 교체를 라이브러리 없이 한다. |
-| 내보내기 | zip 라이브러리 1개 (예: `jszip`) | 승인 문서 세트를 `docs/` 구조 그대로 한 파일로 내려받는다. |
+| 내보내기 | `jszip` | 승인 문서 세트를 `docs/` 구조 그대로 한 파일로 내려받는다. |
 
 ## 모듈 역할과 경계
 
@@ -32,6 +32,7 @@
 - **DB 모듈**: 스키마 생성과 조회·저장. 테이블은 [3-DATABASE.md](3-DATABASE.md).
 - **에이전트 모듈**: CLI별 어댑터(`claude`, `codex`)가 실행·상태 확인·로그인을 같은 형태로 제공한다. 동작 규칙은 [requirements/agent-cli.md](requirements/agent-cli.md), CLI별 실제 명령은 아래 [외부 연동](#외부-연동-에이전트-cli).
 - **프롬프트**: 인터뷰와 문서 종류별 프롬프트, 화면 주석 요청 템플릿은 코드에 고정한다.
+- **구현 경로**: 화면은 `src/app/`·`src/components/`, API는 `src/app/api/`, DB는 `src/server/db/`, CLI 어댑터는 `src/server/agents/`, 실행 잠금·종료 정리는 `src/server/runtime.ts`, 프롬프트는 `src/server/prompts.ts`에 있다.
 - **문서 규칙**: 생성 프롬프트에 넣고 zip에 담는 문서 규칙은 이 저장소의 [`docs/AGENTS.md`](AGENTS.md)를 실행 시 그대로 읽는다. 사본을 따로 두지 않는다.
 
 ## 데이터 흐름
@@ -67,7 +68,7 @@
 
 - **작업 폴더**: 모든 자식 프로세스는 `<데이터 폴더>/agent-workdir`(빈 폴더, 고정)에서 실행한다. SDDMaker 저장소에서 실행하면 CLI가 SDDMaker의 `AGENTS.md`·`docs/`를 지시로 읽어 생성 문서가 오염된다. Claude 세션은 작업 폴더 기준으로 저장되므로 폴더를 바꾸지 않는다.
 - **Codex 홈 분리**: Codex는 `CODEX_HOME=<데이터 폴더>/codex-home`으로 실행한다. 사용자 전역 지시문(`~/.codex/AGENTS.md`)이 생성 문서에 섞이지 않게 하기 위해서다. 그래서 SDDMaker의 Codex 로그인은 사용자 터미널의 Codex 로그인과 따로이며, 로그인 파일은 CLI가 이 폴더에 둔다. Claude는 사용자 기본 로그인을 그대로 쓴다.
-- **API 키 제거**: 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, `CODEX_API_KEY`를 지운다. 남아 있으면 구독 대신 API 키로 과금될 수 있다.
+- **API 키·다른 경로 제거**: 자식 프로세스 환경에서 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, `CODEX_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `OPENAI_BASE_URL`을 지운다. 남아 있으면 구독 대신 API 키나 다른 경로로 실행되어 과금될 수 있다.
 - **셸 미사용**: 실행 파일을 직접 실행한다(`spawn`, 셸 없음).
 
 ### 로그인 상태·로그인
@@ -84,20 +85,26 @@
 ## 보안
 
 - 개발 서버는 `127.0.0.1`에만 연다. 인증 없는 API가 사용자 구독으로 CLI를 실행하므로 같은 네트워크에 열면 안 된다.
-- 모든 요청은 `Host`가 `localhost`/`127.0.0.1`일 때만 받는다 (DNS rebinding으로 문서 본문을 읽는 것을 막음). 변경 요청(POST·PUT·DELETE)은 `Origin`도 같은 조건을 검사한다 (다른 웹사이트가 보내는 요청으로 CLI가 실행되는 것을 막음).
+- 모든 요청은 `Host`가 `localhost`/`127.0.0.1`일 때만 받는다 (DNS rebinding으로 문서 본문을 읽는 것을 막음). 변경 요청(POST·PUT·DELETE·PATCH)은 `Origin`이 있어야 하며, 그 호스트와 포트가 `Host`와 같아야 한다. 다른 로컬 포트와 `localhost`↔`127.0.0.1` 혼용도 거부한다.
 - `<데이터 폴더>`에는 DB와 SDDMaker용 Codex 로그인 파일이 있다. git에 올리거나 공유하지 않는다.
 
 ## 서버 공유 상태
 
 프로젝트별 실행 잠금과 실행 중인 자식 프로세스 목록은 여러 API(생성·취소·프로젝트 삭제)가 함께 쓴다. 개발 서버가 모듈을 다시 읽어도 사라지지 않게 `globalThis`에 둔다.
 
+CLI는 별도 프로세스 그룹으로 실행한다. 취소·연결 끊김·시간 초과 시 그룹에 SIGTERM을 보내고 2초 뒤에도 남으면 SIGKILL로 정리한다. 부모 CLI가 끝나도 그룹에 남은 프로세스는 정리한다. 서버의 SIGINT·SIGTERM 종료에서는 1초 유예 후 그룹을 정리하고, `exit`에서는 즉시 정리한다.
+
+인터뷰·문서 생성 한 번의 상한은 10분이다. 시간 초과는 `agent_failed`와 `응답 시간이 초과되었습니다` 메시지로 전달하며 부분 결과를 저장하지 않는다.
+
 ## 실행·테스트
 
 | 용도 | 명령 |
 | --- | --- |
 | 개발 실행 | `npm run dev` (= `next dev -H 127.0.0.1`) |
-
-테스트 명령은 구현 시 정하고 여기에 추가한다.
+| 테스트 | `npm test` (= `vitest run`) |
+| 린트 | `npm run lint` (= `eslint .`) |
+| 타입 검사 | `npm run typecheck` (= `tsc --noEmit`) |
+| 빌드 | `npm run build` (= `next build`) |
 
 | 환경변수 | 용도 | 기본값 |
 | --- | --- | --- |

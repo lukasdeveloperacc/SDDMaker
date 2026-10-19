@@ -47,6 +47,7 @@
 
 - 승인을 취소하면, 생성 순서상 뒤에 있는 문서 중 본문이 있는 문서에 "앞 문서 변경됨" 표시를 붙인다.
 - 표시가 붙어도 상태(`draft`/`approved`)는 바뀌지 않는다. 사용자가 그 문서를 다시 생성하거나, `draft`면 승인하거나, `approved`면 **확인** 버튼(상태 유지, 표시만 지움)을 누르면 표시가 사라진다.
+- 화면 정의서는 생성·피드백 재생성 결과를 저장할 때(`PUT`에 `keepUndo: true`와 `generatedBy`) 같은 방식으로 표시를 지운다. 직접 편집 저장은 표시를 지우지 않는다.
 - 생성 조건은 그대로 적용한다. 예: `0-PRODUCT.md` 승인을 취소하면 다시 승인할 때까지 `1-SYSTEM-ARCHITECTURE.md`를 생성·승인할 수 없다.
 
 ## 생성 입력
@@ -107,7 +108,7 @@
 | 메서드·경로 | 요청 | 응답 |
 | --- | --- | --- |
 | `POST /api/projects/:id/documents/:path/generate` | `{ agent, feedback? }` | SSE — 생성 본문. 마크다운은 서버가 저장, 화면 정의서는 저장하지 않음 |
-| `PUT /api/projects/:id/documents/:path` | `{ content, keepUndo? }` | 저장된 문서. `empty`면 `draft`로 바뀐다. `keepUndo`는 화면 정의서 전용 |
+| `PUT /api/projects/:id/documents/:path` | `{ content, keepUndo?, generatedBy? }` | 저장된 문서. `empty`면 `draft`로 바뀐다. `keepUndo`는 화면 정의서 전용. `generatedBy`(에이전트 이름)는 화면 정의서 생성·재생성 저장 전용이며 `keepUndo`와 함께 보낸다. 있으면 생성 에이전트를 기록하고 "앞 문서 변경됨"을 지운다 |
 | `POST /api/projects/:id/documents/:path/undo` | — | 복구된 문서 |
 | `POST /api/projects/:id/documents/:path/approve` | — | `approved` 문서. `0-PRODUCT.md`면 요구사항 목록, `4-USERFLOW.md`면 화면 목록 포함 |
 | `POST /api/projects/:id/documents/:path/unapprove` | — | `draft` 문서와 "앞 문서 변경됨"이 붙은 문서 목록 |

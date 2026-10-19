@@ -5,3 +5,9 @@
 - `README.md`: 프로젝트 소개.
 - `docs/`: 제품·설계·요구사항·변경 문서.
 - `.gitignore`: Git 추적 제외 설정.
+- `package.json`·`package-lock.json`: 의존성과 스크립트.
+- `tsconfig.json`·`next.config.ts`·`next-env.d.ts`: TypeScript와 Next 설정.
+- `eslint.config.mjs`: 린트 설정.
+- `vitest.config.ts`: 테스트 설정.
+- `src/`: 앱 코드. `app/` 화면·API, `server/` 서버 모듈, `lib/` 공용·브라우저 로직, `components/` UI.
+- `test/`: vitest 테스트와 가짜 CLI.

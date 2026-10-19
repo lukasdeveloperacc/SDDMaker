@@ -16,6 +16,7 @@ API 키 없이, 사용자 컴퓨터의 `claude` CLI와 `codex` CLI에 구독 계
   - Codex는 조각을 주지 않으므로 끝날 때까지 "생성 중"과 경과 시간을 보여 주고, 끝나면 전체 본문을 한 번에 보여 준다.
 - 인터뷰처럼 여러 턴이 필요한 단계는 세션 ID로 이어 간다. 세션은 단계 안에서만 쓴다.
 - 실행 중에는 **취소** 버튼을 보여 준다. 취소하면 자식 프로세스를 종료하고 결과를 저장하지 않는다.
+- 인터뷰·문서 생성은 한 번에 최대 10분 실행한다. 초과하면 프로세스 그룹을 종료하고 `agent_failed`와 `응답 시간이 초과되었습니다`를 전달한다. 부분 결과는 저장하지 않는다.
 
 ### 로그인 상태
 
@@ -46,6 +47,7 @@ SDDMaker의 Codex는 앱 전용 홈 폴더를 쓰므로, 터미널에서 이미 
 - **로그인 출력은 남기지 않는다**: 로그인 명령이 출력한 URL·코드는 화면에만 보여 주고 DB·로그에 남기지 않는다.
 - **로그인 실행 수**: CLI마다 로그인은 한 번에 하나만 돈다. 진행 중 재요청은 409. 사용자가 취소하거나 10분이 지나면 로그인 프로세스를 종료한다.
 - **연결 끊김**: 브라우저 연결이 끊기면 자식 프로세스(실행·로그인)를 종료하고 결과를 저장하지 않는다.
+- **종료 정리**: 취소·시간 초과·서버 종료 시 CLI가 만든 하위 프로세스도 그룹 단위로 정리한다. 종료 신호를 무시하면 강제 종료한다 ([종료 처리](../1-SYSTEM-ARCHITECTURE.md#서버-공유-상태)).
 - **잠금 해제 시점**: 실행이 끝나면 프로젝트 실행 잠금을 푼 뒤에 `done`·`error`를 보낸다. 화면 정의서는 `done`을 받자마자 브라우저가 저장하기 때문이다.
 - **세션 ID 저장**: 첫 턴이 성공한 뒤에 저장한다. 첫 턴이 실패하면 다음 시도는 새 세션으로 시작한다.
 
@@ -81,7 +83,7 @@ SDDMaker의 Codex는 앱 전용 홈 폴더를 쓰므로, 터미널에서 이미 
 
 | 메서드·경로 | 응답 |
 | --- | --- |
-| `GET /api/agents` | `{ claude: { installed, loggedIn, subscription }, codex: { installed, loggedIn, subscription } }` |
+| `GET /api/agents` | `{ claude: { installed, loggedIn, subscription, loginCommand }, codex: { installed, loggedIn, subscription, loginCommand } }`. `loginCommand`는 터미널 로그인 안내 문구 |
 | `POST /api/agents/:agent/login` | SSE — 로그인 진행 (`prompt` → `done`) |
 | `DELETE /api/agents/:agent/login` | 진행 중인 로그인 취소 |
 

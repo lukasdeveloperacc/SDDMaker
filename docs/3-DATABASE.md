@@ -1,6 +1,8 @@
 # 데이터베이스
 
-> 상태: 예정 — 스키마 파일 없음. 구현 후 실제 스키마 파일 경로를 연결하고, 전체 스키마를 여기에 다시 적지 않는다 ([changes/001-mvp.md](changes/001-mvp.md)).
+> 상태: 예정 — 스키마는 구현됨(아래 링크), 실제 CLI 수동 검증 전. 전체 스키마를 여기에 다시 적지 않는다 ([changes/001-mvp.md](changes/001-mvp.md)).
+
+스키마: [`src/server/db/schema.ts`](../src/server/db/schema.ts)
 
 로컬 SQLite 파일 하나(`<데이터 폴더>/sddmaker.db`, 위치는 [1-SYSTEM-ARCHITECTURE.md](1-SYSTEM-ARCHITECTURE.md#실행테스트))를 쓴다. 단일 사용자라 사용자·권한 테이블은 없다.
 
