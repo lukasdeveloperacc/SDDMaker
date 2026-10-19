@@ -12,3 +12,5 @@
 - `vitest.config.ts`: 테스트 설정.
 - `src/`: 앱 코드. `app/` 화면·API, `server/` 서버 모듈, `lib/` 공용·브라우저 로직, `components/` UI.
 - `test/`: vitest 테스트와 가짜 CLI.
+
+- `scripts/`: 설치 시 네이티브 CLI 보조 파일의 실행 권한 보정.

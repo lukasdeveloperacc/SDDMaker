@@ -197,6 +197,10 @@ const CODE_RE = /\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/;
 
 // 로그인 CLI를 실행하고 URL·코드 안내를 onPrompt로 넘긴다. 출력 원문은 저장하거나 로그에 남기지 않는다.
 export async function runLogin(agent: AgentName, args: string[], i: LoginInput): Promise<void> {
+  if (i.terminal) {
+    const { runPtyLogin } = await import('./login-pty');
+    return runPtyLogin(agent, args, i);
+  }
   let url: string | null = null;
   let code: string | undefined;
   const scan = (raw: string) => {

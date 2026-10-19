@@ -10,7 +10,13 @@ export interface RunInput {
   timeoutMs?: number; // 기본 RUN_TIMEOUT_MS (테스트에서 줄인다)
 }
 export interface RunResult { text: string; sessionId: string }
+export interface LoginTerminalControls {
+  write(data: string): boolean;
+  resize(cols: number, rows: number): boolean;
+}
 export interface LoginInput {
+  terminal?: boolean;
+  onTerminalInput?: (controls: LoginTerminalControls) => void;
   onPrompt: (p: { url: string; code?: string }) => void;
   onOutput?: (text: string) => void;
   onCodeInput?: (submit: (text: string, close?: boolean) => boolean) => void;

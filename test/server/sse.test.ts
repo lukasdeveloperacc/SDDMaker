@@ -65,6 +65,18 @@ describe('createSse', () => {
 });
 
 describe('runAgentSse', () => {
+  it('이미 끊긴 요청은 상태 확인과 실행을 시작하지 않고 잠금을 푼다', async () => {
+    const status = vi.spyOn(getAdapter('claude'), 'status');
+    const execute = vi.fn().mockResolvedValue('should not run');
+    const ac = new AbortController();
+    ac.abort();
+    const { res } = startRun({ signal: ac.signal, execute });
+    expect(await readSse(res)).toEqual([]);
+    expect(status).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(getRun(PROJECT)).toBeNull();
+  });
+
   it('delta 세 번 뒤 done이 온다', async () => {
     process.env.FAKE_MODE = 'ok';
     const { res } = startRun({});

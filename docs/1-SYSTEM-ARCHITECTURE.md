@@ -95,7 +95,7 @@ flowchart TD
 | 로그인 | `auth login --claudeai` (구독, 브라우저가 열림) | `login --device-auth` (`CODEX_HOME` 지정, URL·코드 출력) |
 | 터미널 로그인 안내 | `CLAUDE_CONFIG_DIR='<데이터 폴더>/claude-home' claude auth login --claudeai` | `CODEX_HOME='<데이터 폴더>/codex-home' codex login --device-auth` |
 
-- 두 CLI의 stdout·stderr를 SSE로 전달해 웹 로그인 콘솔에서 보여 준다. 두 CLI 모두 로그인 동안 stdin을 열어 두고 세션 식별자를 확인한 콘솔 입력을 한 줄씩 전달한다. Enter는 입력 전송, Ctrl+C는 로그인 취소다. Claude 간편 코드 제출은 전체 반환 코드 한 줄을 전달한 뒤 stdin을 닫는다. CLI 2.1.303은 PTY 없이 pipe에서 입력을 받으며, 개행 없는 프롬프트도 출력 조각 단위로 전달한다. Codex는 기기 인증 URL·코드를 보여 주고 브라우저 인증을 기다린다 ([changes/004-login-console.md](changes/004-login-console.md), [changes/005-console-input.md](changes/005-console-input.md)). Codex 기기 코드 로그인은 ChatGPT 보안 설정에서 허용해야 하며 기기 코드는 브라우저에 입력한다. 실제 계정 인증·모델 생성은 별도 검증이다.
+- 앱의 계정 연결은 `node-pty`로 고정된 공식 CLI 로그인 명령을 실제 PTY에서 실행하고 `xterm.js`에 raw 출력을 전달한다. 키 입력·붙여넣기·방향키·Ctrl+C·resize가 같은 프로세스에 적용된다. SSE는 출력, PUT은 세션을 검증한 raw 입력과 크기 변경을 전달한다. 범용 셸은 제공하지 않는다. 다른 창의 로그인은 조회의 `loginRunning`으로 알리고 종료 후 재연결한다. 취소 API는 자식 종료와 잠금 해제를 기다린다. 시작·충돌·종료 메타데이터만 서버 로그에 남긴다. 기존 pipe 로그인 API는 호환용으로 유지한다 ([changes/006-login-recovery.md](changes/006-login-recovery.md)). Codex 기기 코드는 OpenAI 인증 페이지에 입력한다. 실제 계정 인증·모델 생성은 별도 검증이다.
 - 앱은 자체 OAuth를 구현하지 않고 토큰을 다루지 않는다 ([requirements/agent-cli.md](requirements/agent-cli.md#규칙)).
 
 ## 보안
@@ -174,7 +174,7 @@ docker compose exec sddmaker codex login --device-auth
 
 Docker만 쓴다면 `docker compose exec sddmaker` 대신 `docker exec -it sddmaker`를 쓴다. URL은 이용 중인 브라우저에서 열고, Claude가 반환 코드를 요구하면 같은 터미널에 입력한다. 이미지의 `CLAUDE_CONFIG_DIR=/app/data/claude-home`과 `CODEX_HOME=/app/data/codex-home`이 앱과 터미널에서 같으므로 컨테이너 인증이 앱에 반영된다. 호스트에 두 CLI나 로그인 정보가 없어도 인증을 시작할 수 있다. 로그인을 마치면 앱에서 상태를 새로 확인한다. 앱은 API 키 방식으로 대체하지 않는다.
 
-Claude는 콜백에 접근할 수 없는 환경에서 반환 코드를 요구할 수 있다. 앱 입력칸은 전체 `code#state`를 같은 로그인 CLI로 전달한다. 직접 로그인할 때는 위 대화형 명령의 터미널에 입력한다. 기존 `/home/node/.claude` 또는 호스트 기본 Claude 로그인은 새 전용 저장소로 자동 이동하지 않는다. 기존 파일을 삭제하지 않으며 새 경로에서 한 번 다시 인증한다.
+Claude는 콜백에 접근할 수 없는 환경에서 반환 코드를 요구할 수 있다. 브라우저 터미널에 전체 `code#state`를 붙여넣으면 같은 로그인 CLI에 전달된다. 직접 로그인할 때는 위 대화형 명령의 터미널에 입력한다. 기존 `/home/node/.claude` 또는 호스트 기본 Claude 로그인은 새 전용 저장소로 자동 이동하지 않는다. 기존 파일을 삭제하지 않으며 새 경로에서 한 번 다시 인증한다.
 
 인증 격리 근거: [Claude 계정별 설정 디렉터리](https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts), [Codex 인증 저장소](https://learn.chatgpt.com/docs/auth#credential-storage).
 

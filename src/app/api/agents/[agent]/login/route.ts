@@ -2,7 +2,7 @@ import { isAgentName } from '@/lib/contract';
 import { AgentError } from '@/server/agents/exec';
 import { getAdapter } from '@/server/agents';
 import type { AgentAdapter } from '@/server/agents/types';
-import { acquireLogin, cancelLogin, releaseLogin, setLoginCodeInput, submitLoginCode, writeLoginInput } from '@/server/runtime';
+import { acquireLogin, cancelLogin, releaseLogin, setLoginCodeInput, submitLoginCode, writeLoginInput, setLoginTerminal, loginTerminal } from '@/server/runtime';
 import { apiError, readJson } from '@/server/http';
 import { createSse } from '@/server/sse';
 
@@ -24,22 +24,37 @@ async function loggedInAfterLogin(adapter: AgentAdapter): Promise<boolean> {
 export async function POST(req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
   if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
+  const body = await readJson(req);
+  if (!body || (body.terminal !== undefined && typeof body.terminal !== 'boolean')) return apiError(400, 'invalid_input', '잘못된 로그인 요청입니다');
   const controller = acquireLogin(agent);
-  if (!controller) return apiError(409, 'login_running', '이미 로그인이 진행 중입니다');
+  if (!controller) {
+    console.info('agent_login', { agent, event: 'conflict' });
+    return apiError(409, 'login_running', '이미 로그인이 진행 중입니다');
+  }
+  const startedAt = Date.now();
+  console.info('agent_login', { agent, event: 'start' });
 
   const adapter = getAdapter(agent);
   const sse = createSse(req.signal);
   // 브라우저 연결이 끊기거나 cancel되면 로그인 프로세스를 끝낸다.
-  sse.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  const onDisconnect = () => controller.abort();
+  sse.signal.addEventListener('abort', onDisconnect, { once: true });
+  if (sse.signal.aborted) onDisconnect();
 
   void (async () => {
     try {
       try {
+        controller.signal.throwIfAborted();
         await adapter.login({
+          terminal: body.terminal === true,
           onPrompt: (p) => sse.send('prompt', p),
           onOutput: (text) => sse.send('output', { text }),
           onCodeInput: (submit) => {
             const loginId = setLoginCodeInput(agent, controller, submit);
+            if (loginId) sse.send('input_ready', { loginId });
+          },
+          onTerminalInput: (terminal) => {
+            const loginId = setLoginTerminal(agent, controller, terminal);
             if (loginId) sse.send('input_ready', { loginId });
           },
           signal: controller.signal,
@@ -49,15 +64,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
         releaseLogin(agent, controller);
         const code = e instanceof AgentError && e.code === 'cli_not_found' ? 'cli_not_found' : 'login_failed';
         const message = e instanceof AgentError ? e.message : '로그인에 실패했습니다';
+        console.info('agent_login', { agent, event: controller.signal.aborted ? 'cancel' : 'failed', durationMs: Date.now() - startedAt, code });
         sse.send('error', { code, message });
         return;
       }
       // 로그인 명령은 성공했으니 상태 확인 실패로 로그인 실패라고 하지 않는다. 한 번 더 보고 안 되면 미로그인으로 본다.
       const loggedIn = await loggedInAfterLogin(adapter);
       releaseLogin(agent, controller);
+      console.info('agent_login', { agent, event: 'completed', durationMs: Date.now() - startedAt, loggedIn });
       sse.send('done', { loggedIn });
     } finally {
       releaseLogin(agent, controller);
+      sse.signal.removeEventListener('abort', onDisconnect);
       sse.close();
     }
   })();
@@ -69,6 +87,15 @@ export async function PUT(req: Request, ctx: { params: Promise<{ agent: string }
   const { agent } = await ctx.params;
   if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
   const body = await readJson(req);
+  if (body && (Object.hasOwn(body, 'data') || Object.hasOwn(body, 'cols') || Object.hasOwn(body, 'rows'))) {
+    if (typeof body.loginId !== 'string' || Object.hasOwn(body, 'code') || Object.hasOwn(body, 'input')) return apiError(400, 'invalid_input', '잘못된 터미널 요청입니다');
+    const data = Object.hasOwn(body, 'data');
+    if (data ? typeof body.data !== 'string' || body.data.length === 0 || body.data.length > 16_384 || Object.hasOwn(body, 'cols') || Object.hasOwn(body, 'rows')
+      : !Number.isInteger(body.cols) || !Number.isInteger(body.rows) || Number(body.cols) < 2 || Number(body.cols) > 500 || Number(body.rows) < 2 || Number(body.rows) > 200) return apiError(400, 'invalid_input', '잘못된 터미널 입력 또는 크기입니다');
+    const terminal = loginTerminal(agent, body.loginId);
+    if (!terminal || !(data ? terminal.write(body.data as string) : terminal.resize(body.cols as number, body.rows as number))) return apiError(409, 'invalid_state', '종료된 터미널입니다. 다시 연결하세요');
+    return new Response(null, { status: 204 });
+  }
   if (body && Object.hasOwn(body, 'input')) {
     if (typeof body.input !== 'string' || body.input.length > 4096 || /\p{Cc}/u.test(body.input) || typeof body.loginId !== 'string' || Object.hasOwn(body, 'code')) {
       return apiError(400, 'invalid_input', '로그인 콘솔에는 4096자 이내의 한 줄을 입력하세요');
@@ -92,6 +119,6 @@ export async function PUT(req: Request, ctx: { params: Promise<{ agent: string }
 export async function DELETE(_req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
   if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
-  cancelLogin(agent);
+  if (!await cancelLogin(agent)) return apiError(409, 'login_running', '이전 로그인 종료를 기다리고 있습니다. 잠시 후 다시 취소하세요');
   return new Response(null, { status: 204 });
 }

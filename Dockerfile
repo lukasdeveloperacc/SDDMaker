@@ -4,14 +4,18 @@ ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
 FROM base AS build
-# better-sqlite3 can compile when a platform has no prebuilt binary.
+# node-pty compiles on Linux; better-sqlite3 can also need a native build.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
+COPY scripts/fix-pty-helper.mjs ./scripts/fix-pty-helper.mjs
 RUN npm ci
 COPY . .
 RUN npm run build
+# Fail the image build if standalone tracing misses node-pty's native assets.
+RUN cd .next/standalone \
+    && node -e "const p=require('node-pty').spawn('/bin/sh',['-c','test -t 0 && test -t 1']); p.onExit(({exitCode})=>process.exit(exitCode)); setTimeout(()=>process.exit(1),5000).unref()"
 
 FROM base AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.303

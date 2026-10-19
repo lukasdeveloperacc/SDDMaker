@@ -11,10 +11,12 @@ import { LoginConsole } from '@/components/LoginConsole';
 const LABEL: Record<AgentName, string> = { claude: 'Claude Code', codex: 'Codex' };
 
 interface LoginState {
+  attempt: number;
   agent: AgentName;
   running: boolean;
   prompt: { url: string; code?: string } | null;
   output: string;
+  outputLength: number;
   loginId: string | null;
   error: { message: string; help: AgentErrorHelp } | null;
 }
@@ -45,7 +47,9 @@ export function AgentPicker({
   const [agents, setAgents] = useState<AgentsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [login, setLogin] = useState<LoginState | null>(null);
+  const [cancelling, setCancelling] = useState<AgentName | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const attemptRef = useRef(0);
 
   const refreshAgents = useCallback(async () => {
     try {
@@ -67,7 +71,8 @@ export function AgentPicker({
     if (abortRef.current) return;
     const controller = new AbortController();
     abortRef.current = controller;
-    setLogin({ agent, running: true, prompt: null, output: '', loginId: null, error: null });
+    setLoadError(null);
+    setLogin({ attempt: ++attemptRef.current, agent, running: true, prompt: null, output: '', outputLength: 0, loginId: null, error: null });
     const status = agents?.[agent];
     const fail = (message: string, code: 'login_failed' | 'cli_not_found' = 'login_failed') =>
       setLogin((prev) => prev ? { ...prev, running: false, prompt: null, loginId: null, error: { message, help: agentErrorHelp(code, status) } } : prev);
@@ -76,11 +81,17 @@ export function AgentPicker({
       const res = await fetch(`/api/agents/${agent}/login`, {
         method: 'POST',
         cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terminal: true }),
         signal: controller.signal,
       });
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { message?: unknown } | null;
+        const data = (await res.json().catch(() => null)) as { code?: unknown; message?: unknown } | null;
         setLogin(null);
+        if (data?.code === 'login_running') {
+          setAgents((prev) => prev ? { ...prev, [agent]: { ...prev[agent], loginRunning: true } } : prev);
+          return;
+        }
         setLoadError(typeof data?.message === 'string' ? data.message : '로그인을 시작하지 못했습니다.');
         return;
       }
@@ -92,7 +103,8 @@ export function AgentPicker({
           const prompt = { url: String(m.data.url), code: m.data.code ? String(m.data.code) : undefined };
           setLogin((prev) => (prev ? { ...prev, prompt } : prev));
         } else if (m.event === 'output') {
-          setLogin((prev) => prev ? { ...prev, output: (prev.output + String(m.data.text)).slice(-16_384) } : prev);
+          const text = String(m.data.text);
+          setLogin((prev) => prev ? { ...prev, output: (prev.output + text).slice(-65_536), outputLength: prev.outputLength + text.length } : prev);
         } else if (m.event === 'input_ready') {
           setLogin((prev) => prev ? { ...prev, loginId: String(m.data.loginId) } : prev);
         } else if (m.event === 'done') {
@@ -115,7 +127,10 @@ export function AgentPicker({
         setLogin(null);
       }
     } catch {
-      if (!controller.signal.aborted) fail('연결이 끊겼습니다.');
+      if (!controller.signal.aborted && abortRef.current === controller) {
+        fail('연결이 끊겼습니다.');
+        await refreshAgents();
+      }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
@@ -123,20 +138,30 @@ export function AgentPicker({
 
   async function cancelLogin(agent: AgentName) {
     const controller = abortRef.current;
+    setCancelling(agent);
+    setLoadError(null);
     try {
-      await fetch(`/api/agents/${agent}/login`, { method: 'DELETE' });
-    } catch {
-      // 연결 오류는 무시한다. 로그인 스트림이 끝나면 화면이 갱신된다.
-    } finally {
+      await api('DELETE', `/api/agents/${agent}/login`);
       controller?.abort();
       if (abortRef.current === controller) {
         abortRef.current = null;
         setLogin(null);
       }
+      await refreshAgents();
+      return true;
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '로그인을 종료하지 못했습니다. 다시 시도하세요.');
+      return false;
+    } finally {
+      setCancelling(null);
     }
   }
 
-  const busy = login?.running === true;
+  async function restartLogin(agent: AgentName) {
+    if (await cancelLogin(agent)) await startLogin(agent);
+  }
+
+  const busy = login?.running === true || cancelling !== null;
 
   return (
     <fieldset className="agent-picker" disabled={disabled}>
@@ -147,6 +172,7 @@ export function AgentPicker({
         const locked = lockedTo != null && lockedTo !== a;
         const showLogin = s !== undefined && needsLogin(s);
         const loginHere = login?.agent === a ? login : null;
+        const elsewhere = s?.loginRunning && !loginHere?.running;
         return (
           <div key={a} className="agent-option">
             <div className="agent-row">
@@ -162,21 +188,35 @@ export function AgentPicker({
                 <span className="title">{LABEL[a]}</span>
               </label>
               {s ? statusBadge(s) : <Badge tone="neutral">확인 중</Badge>}
-              {showLogin && (
+              <span className="agent-help">
+                <a href={a === 'codex' ? 'https://learn.chatgpt.com/docs/auth#preferred-device-code-authentication-beta' : 'https://code.claude.com/docs/en/authentication'} target="_blank" rel="noopener noreferrer" aria-label={`${LABEL[a]} 로그인 도움말`} aria-describedby={`${groupName}-${a}-help`}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16v1" /></svg>
+                </a>
+                <span role="tooltip" id={`${groupName}-${a}-help`}>{a === 'codex' ? '기기 로그인이 막히면 ChatGPT 설정 → 보안에서 허용하세요.' : '브라우저에서 받은 인증 코드를 터미널에 붙여넣으세요.'}</span>
+              </span>
+              {showLogin && !elsewhere && (
                 <Button variant="utility" disabled={busy || disabled} onClick={() => void startLogin(a)}>
                   계정 연결
                 </Button>
               )}
             </div>
 
+            {elsewhere && (
+              <div className="row">
+                <span className="caption">로그인 진행 중</span>
+                <Button variant="utility" disabled={busy || disabled} onClick={() => void restartLogin(a)}>
+                  {cancelling === a ? '종료 중…' : '연결 재시작'}
+                </Button>
+              </div>
+            )}
+
             {loginHere && (
               <div className="stack">
-                <LoginConsole agent={a} output={loginHere.output} prompt={loginHere.prompt} loginId={loginHere.loginId}
-                  running={loginHere.running} onSubmitted={() => setLogin((prev) => prev?.loginId === loginHere.loginId ? { ...prev, loginId: null } : prev)}
+                <LoginConsole key={loginHere.attempt} agent={a} output={loginHere.output} outputLength={loginHere.outputLength} loginId={loginHere.loginId}
+                  running={loginHere.running}
                   onCancel={() => void cancelLogin(a)} />
                 {loginHere.error && (
                   <Notice tone="error" title={loginHere.error.help.title}>
-                    <p className="notice-body">{loginHere.error.help.body}</p>
                     <p className="caption">{loginHere.error.message}</p>
                     <div>
                       <Button variant="utility" onClick={() => void startLogin(a)}>
@@ -187,17 +227,9 @@ export function AgentPicker({
                 )}
               </div>
             )}
-            {showLogin && s && (
-              <details className="caption agent-login-help">
-                <summary>터미널에서 직접 로그인</summary>
-                <p>앱 서버가 실행되는 터미널에서 사용하세요. Docker에서는 컨테이너 안에서 실행합니다.</p>
-                <code>{s.loginCommand}</code>
-              </details>
-            )}
           </div>
         );
       })}
-      {agents && <p className="caption">연결은 SDDMaker 전용 저장소에 보관됩니다. 호스트의 로그인과 분리됩니다.</p>}
     </fieldset>
   );
 }

@@ -1,6 +1,7 @@
 import { getAdapter } from '@/server/agents';
 import { AGENT_NAMES, type AgentName, type AgentsResponse } from '@/lib/contract';
 import { json } from '@/server/http';
+import { isLoginRunning } from '@/server/runtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,10 +13,10 @@ async function statusOf(agent: AgentName): Promise<AgentsResponse[AgentName]> {
   const loginCommand = adapter.loginCommand();
   try {
     const s = await adapter.status();
-    return { ...s, loginCommand };
+    return { ...s, loginCommand, loginRunning: isLoginRunning(agent) };
   } catch (e) {
     console.error(`agent status failed: ${agent} ${e instanceof Error ? e.name : 'unknown'}`);
-    return { installed: false, loggedIn: false, subscription: false, loginCommand };
+    return { installed: false, loggedIn: false, subscription: false, loginCommand, loginRunning: isLoginRunning(agent) };
   }
 }
 

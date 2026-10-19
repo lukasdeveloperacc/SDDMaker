@@ -9,9 +9,18 @@ interface RunEntry {
   markReleased: () => void;
 }
 
+interface LoginEntry {
+  controller: AbortController;
+  id: string;
+  submit?: (text: string, close?: boolean) => boolean;
+  terminal?: { write(data: string): boolean; resize(cols: number, rows: number): boolean };
+  released: Promise<void>;
+  markReleased: () => void;
+}
+
 interface RuntimeState {
   runs: Map<number, RunEntry>;
-  logins: Map<AgentName, { controller: AbortController; id: string; submit?: (text: string, close?: boolean) => boolean }>;
+  logins: Map<AgentName, LoginEntry>;
 }
 
 // 개발 서버가 모듈을 다시 읽어도 실행 잠금과 자식 목록이 사라지지 않게 globalThis에 둔다.
@@ -68,16 +77,37 @@ export async function cancelRun(projectId: number, waitMs = 5000): Promise<void>
 export function acquireLogin(agent: AgentName): AbortController | null {
   if (state.logins.has(agent)) return null;
   const controller = new AbortController();
-  state.logins.set(agent, { controller, id: randomUUID() });
+  let markReleased!: () => void;
+  const released = new Promise<void>((resolve) => { markReleased = resolve; });
+  state.logins.set(agent, { controller, id: randomUUID(), released, markReleased });
   return controller;
 }
 
 export function releaseLogin(agent: AgentName, controller: AbortController): void {
-  if (state.logins.get(agent)?.controller === controller) state.logins.delete(agent);
+  const entry = state.logins.get(agent);
+  if (entry?.controller !== controller) return;
+  state.logins.delete(agent);
+  entry.markReleased();
 }
 
-export function cancelLogin(agent: AgentName): void {
-  state.logins.get(agent)?.controller.abort();
+export function isLoginRunning(agent: AgentName): boolean {
+  return state.logins.has(agent);
+}
+
+// 204를 받은 화면이 즉시 새 로그인을 시작할 수 있도록 자식 종료와 잠금 해제를 기다린다.
+export async function cancelLogin(agent: AgentName, waitMs = 5000): Promise<boolean> {
+  const entry = state.logins.get(agent);
+  if (!entry) return true;
+  entry.controller.abort();
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      entry.released.then(() => true),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), waitMs); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function setLoginCodeInput(agent: AgentName, controller: AbortController, submit: (text: string, close?: boolean) => boolean): string | null {
@@ -100,6 +130,18 @@ export function writeLoginInput(agent: AgentName, id: string, input: string): bo
   const entry = state.logins.get(agent);
   if (!entry || entry.id !== id || entry.controller.signal.aborted || !entry.submit) return false;
   return entry.submit(input, false);
+}
+
+export function setLoginTerminal(agent: AgentName, controller: AbortController, terminal: NonNullable<LoginEntry['terminal']>): string | null {
+  const entry = state.logins.get(agent);
+  if (!entry || entry.controller !== controller || controller.signal.aborted) return null;
+  entry.terminal = terminal;
+  return entry.id;
+}
+
+export function loginTerminal(agent: AgentName, id: string): LoginEntry['terminal'] {
+  const entry = state.logins.get(agent);
+  return entry?.id === id && !entry.controller.signal.aborted ? entry.terminal : undefined;
 }
 
 // 자식 프로세스 그룹(pgid = 자식 pid)을 추적한다. 앱이 꺼질 때 남은 CLI를 끝내려고 쓴다.

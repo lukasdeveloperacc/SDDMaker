@@ -134,9 +134,6 @@ export function InterviewPanel({
     body = (
       <Card>
         <div className="stack">
-          <p>
-            에이전트가 아이디어를 바탕으로 질문합니다. 질문에 하나씩 답하고, 충분하면 요약을 만듭니다. 인터뷰는 선택 사항입니다.
-          </p>
           {interview?.status === 'active' && (
             <Notice tone="warn">첫 질문을 만들지 못했습니다. 다시 시작해 주세요.</Notice>
           )}

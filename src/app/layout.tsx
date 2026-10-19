@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import './globals.css';
+import '@xterm/xterm/css/xterm.css';
 
 export const metadata = { title: 'SDDMaker' };
 

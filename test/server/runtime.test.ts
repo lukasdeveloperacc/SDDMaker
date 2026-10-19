@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import { describe, expect, it, afterEach } from 'vitest';
 import { AgentError, shellQuote, spawnCli, STRIPPED_ENV } from '@/server/agents/exec';
-import { cancelRun, acquireLogin, acquireRun, cancelLogin, getRun, releaseLogin } from '@/server/runtime';
+import { cancelRun, acquireLogin, acquireRun, cancelLogin, getRun, isLoginRunning, releaseLogin } from '@/server/runtime';
 import { dataDir } from '@/server/env';
 
 const ALL_KEYS = [
@@ -203,14 +203,45 @@ describe('실행 레지스트리', () => {
     expect(h.controller.signal.aborted).toBe(true);
   });
 
-  it('로그인 중복은 null이고, 풀린 뒤 다시 잡힌다', () => {
+  it('cancelLogin은 캡처한 로그인 해제만 기다리고 다음 로그인에는 영향을 주지 않는다', async () => {
+    const first = acquireLogin('claude')!;
+    const cancellation = cancelLogin('claude');
+    releaseLogin('claude', first);
+    const next = acquireLogin('claude')!;
+    try {
+      expect(await cancellation).toBe(true);
+      expect(next.signal.aborted).toBe(false);
+      expect(isLoginRunning('claude')).toBe(true);
+    } finally {
+      releaseLogin('claude', next);
+    }
+  });
+
+  it('cancelLogin은 종료 대기 한도를 넘으면 false이고 잠금을 유지한다', async () => {
+    const controller = acquireLogin('claude')!;
+    try {
+      expect(await cancelLogin('claude', 10)).toBe(false);
+      expect(controller.signal.aborted).toBe(true);
+      expect(isLoginRunning('claude')).toBe(true);
+      expect(acquireLogin('claude')).toBeNull();
+    } finally {
+      releaseLogin('claude', controller);
+    }
+    expect(await cancelLogin('claude')).toBe(true);
+  });
+
+  it('로그인 중복은 null이고, 풀린 뒤 다시 잡힌다', async () => {
     const c = acquireLogin('claude');
     expect(c).not.toBeNull();
     expect(acquireLogin('claude')).toBeNull();
-    cancelLogin('claude');
+    const cancellation = cancelLogin('claude');
     expect(c!.signal.aborted).toBe(true);
+    expect(isLoginRunning('claude')).toBe(true);
     releaseLogin('claude', c!);
-    expect(acquireLogin('claude')).not.toBeNull();
+    expect(await cancellation).toBe(true);
+    const next = acquireLogin('claude');
+    expect(next).not.toBeNull();
+    releaseLogin('claude', next!);
   });
 });
 

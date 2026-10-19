@@ -30,6 +30,7 @@ describe('웹 로그인 콘솔', () => {
   it('개행 없는 prompt를 바로 전달하고 전체 code#state를 stdin으로 보낸다. 코드는 출력·로그에 남지 않는다', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const { events, loginId, output } = await startCodeLogin();
     expect(output).toContain('https://claude.ai/oauth/fake?x=1');
     expect(output.endsWith('> ')).toBe(true);
@@ -38,7 +39,12 @@ describe('웹 로그인 콘솔', () => {
     const rest = await finish(events);
     expect(rest.at(-1)).toEqual({ event: 'done', data: { loggedIn: true } });
     expect(JSON.stringify(rest)).not.toContain('test-code#state-value');
-    expect([...log.mock.calls, ...error.mock.calls].flat().join(' ')).not.toContain('test-code#state-value');
+    expect([...log.mock.calls, ...error.mock.calls, ...info.mock.calls].flat().join(' ')).not.toContain('test-code#state-value');
+    expect(info.mock.calls).toEqual([
+      ['agent_login', { agent: 'claude', event: 'start' }],
+      ['agent_login', { agent: 'claude', event: 'completed', durationMs: expect.any(Number), loggedIn: true }],
+    ]);
+    info.mockRestore();
     log.mockRestore();
     error.mockRestore();
   });

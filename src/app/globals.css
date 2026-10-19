@@ -452,6 +452,7 @@ a:visited {
   line-height: 1.5;
 }
 .agent-picker {
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: none;
@@ -463,11 +464,13 @@ a:visited {
   opacity: 0.6;
 }
 .agent-option {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-xxs);
 }
 .agent-row {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -479,97 +482,58 @@ a:visited {
   gap: var(--space-xs);
   cursor: pointer;
 }
-.login-code {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  font-variant-numeric: tabular-nums;
-}
-.agent-login-help code {
-  overflow-wrap: anywhere;
-}
-.agent-login-help summary {
-  cursor: pointer;
-}
 .login-console {
   min-width: 0;
   margin-block: var(--space-sm);
+  padding: var(--space-sm);
   border-radius: var(--radius-lg);
-  overflow: hidden;
   background: var(--color-ink-secondary);
   color: var(--color-canvas-soft);
 }
-.login-connection {
+.login-terminal-header {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  min-width: 0;
-  margin-block: var(--space-sm);
-}
-.login-connection-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--space-xs);
-  font-size: 14px;
-}
-.login-connection-header span,
-.login-connection-input p {
-  color: var(--color-ink-muted);
-}
-.login-console-command,
-.login-console-output {
-  margin: 0;
-  padding: var(--space-sm) var(--space-md);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: 14px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-.login-console-output {
-  min-height: 120px;
-  max-height: 260px;
-  overflow-y: auto;
-}
-.login-connection p {
-  margin-block: var(--space-xs) 0;
-  font-size: 14px;
-}
-.login-console-device,
-.login-console-input-row {
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-sm);
-  margin-top: var(--space-xs);
+  margin-bottom: var(--space-sm);
 }
-.login-console-input-row .field {
-  flex: 1 1 240px;
+.login-terminal-header code {
   min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
-.login-console-input-row {
-  align-items: end;
+.agent-terminal {
+  height: 320px;
+  min-width: 0;
+  overflow: hidden;
 }
-.login-console-details summary {
-  cursor: pointer;
+.agent-terminal .xterm {
+  height: 100%;
+}
+.agent-help {
+  display: inline-flex;
+}
+.agent-help > a {
+  display: inline-flex;
+  padding: var(--space-xs);
   color: var(--color-ink-muted);
-  font-size: 14px;
 }
-.login-console :focus-visible {
-  outline-color: var(--color-accent-sky);
-}
-.login-terminal-form {
-  padding: var(--space-sm) var(--space-md) var(--space-md);
-  border-top: 1px solid var(--color-ink-muted);
-}
-.login-terminal-form input {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-.login-terminal-form p {
+.agent-help [role='tooltip'] {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% + var(--space-xs));
+  left: 0;
+  width: min(240px, 100%);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-ink-secondary);
   color: var(--color-canvas-soft);
+  font-size: 13px;
+  visibility: hidden;
 }
-.login-device-help {
-  max-width: 75ch;
+.agent-help:hover [role='tooltip'],
+.agent-help:focus-within [role='tooltip'] {
+  visibility: visible;
 }
 
 /* 마크다운 편집기 (왼쪽 입력, 오른쪽 미리보기) */

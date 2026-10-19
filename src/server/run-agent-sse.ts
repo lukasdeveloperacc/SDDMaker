@@ -15,11 +15,15 @@ export function runAgentSse(opts: {
   const { handle } = opts;
   const sse = createSse(opts.req.signal);
   // 연결이 끊기거나 cancel되면 자식 프로세스를 끝낸다.
-  sse.signal.addEventListener('abort', () => handle.controller.abort(), { once: true });
+  const onDisconnect = () => handle.controller.abort();
+  sse.signal.addEventListener('abort', onDisconnect, { once: true });
+  if (sse.signal.aborted) onDisconnect();
 
   void (async () => {
     try {
+      handle.controller.signal.throwIfAborted();
       await ensureReady(opts.agent);
+      handle.controller.signal.throwIfAborted();
       const text = await opts.execute({
         onDelta: (t) => sse.send('delta', { text: t }),
         signal: handle.controller.signal,
@@ -35,6 +39,7 @@ export function runAgentSse(opts: {
       }
     } finally {
       handle.release();
+      sse.signal.removeEventListener('abort', onDisconnect);
       sse.close();
     }
   })();

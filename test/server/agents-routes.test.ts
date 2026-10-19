@@ -6,7 +6,7 @@ import { POST, DELETE } from '@/app/api/agents/[agent]/login/route';
 import { codexAdapter } from '@/server/agents/codex';
 import { AgentError } from '@/server/agents/exec';
 import { claudeAdapter } from '@/server/agents/claude';
-import { acquireLogin, releaseLogin } from '@/server/runtime';
+import { acquireLogin, isLoginRunning, releaseLogin } from '@/server/runtime';
 import { dataDir } from '@/server/env';
 import { ctx, jsonReq, readSse, sseEvents } from '../helpers/route';
 
@@ -32,17 +32,29 @@ async function waitUntil(cond: () => boolean, ms = 10000) {
 }
 
 describe('GET /api/agents', () => {
+  it('로그인 중 상태는 CLI 상태 확인 성공과 실패 양쪽에서 제공한다', async () => {
+    const controller = acquireLogin('codex')!;
+    try {
+      expect((await (await GET()).json()).codex.loginRunning).toBe(true);
+      vi.spyOn(codexAdapter, 'status').mockRejectedValueOnce(new Error('status failed'));
+      expect((await (await GET()).json()).codex.loginRunning).toBe(true);
+    } finally {
+      releaseLogin('codex', controller);
+    }
+  });
+
   it('두 CLI의 상태와 로그인 안내를 준다', async () => {
     process.env.FAKE_AUTH = 'logged_in';
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: expect.stringContaining('claude auth login --claudeai') });
+    expect(body.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: expect.stringContaining('claude auth login --claudeai'), loginRunning: false });
     expect(body.codex).toEqual({
       installed: true,
       loggedIn: true,
       subscription: true,
       loginCommand: expect.stringContaining('codex login'),
+      loginRunning: false,
     });
   });
 
@@ -57,6 +69,7 @@ describe('GET /api/agents', () => {
       loggedIn: false,
       subscription: false,
       loginCommand: expect.stringContaining('codex login'),
+      loginRunning: false,
     });
     expect(body.claude.loggedIn).toBe(true);
   });
@@ -86,6 +99,40 @@ describe('POST /api/agents/:agent/login 상태 확인 실패', () => {
 });
 
 describe('POST /api/agents/:agent/login', () => {
+  it('이미 끊긴 요청은 로그인 CLI를 실행하지 않고 잠금을 푼다', async () => {
+    const login = vi.spyOn(claudeAdapter, 'login').mockResolvedValue();
+    const ac = new AbortController();
+    ac.abort();
+    const res = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/claude/login', undefined, ac.signal), ctx({ agent: 'claude' }));
+    expect(await readSse(res)).toEqual([]);
+    expect(login).not.toHaveBeenCalled();
+    const next = acquireLogin('claude');
+    expect(next).not.toBeNull();
+    if (next) releaseLogin('claude', next);
+  });
+
+  it('SIGTERM을 무시하는 로그인도 DELETE 204 직후 다시 시작할 수 있다', async () => {
+    const pidFile = path.join(dataDir(), 'pid-login-ignore-term');
+    process.env.FAKE_LOGIN = 'hang';
+    process.env.FAKE_IGNORE_TERM = '1';
+    process.env.FAKE_PID_FILE = pidFile;
+    const endpoint = 'http://127.0.0.1:3000/api/agents/claude/login';
+    const first = await POST(jsonReq('POST', endpoint), ctx({ agent: 'claude' }));
+    await waitUntil(() => fs.existsSync(pidFile));
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    try {
+      expect((await DELETE(jsonReq('DELETE', endpoint), ctx({ agent: 'claude' }))).status).toBe(204);
+      expect(alive(pid)).toBe(false);
+      process.env.FAKE_LOGIN = 'ok';
+      const replacement = await POST(jsonReq('POST', endpoint), ctx({ agent: 'claude' }));
+      expect(replacement.status).toBe(200);
+      expect((await readSse(replacement)).at(-1)?.event).toBe('done');
+    } finally {
+      await DELETE(jsonReq('DELETE', endpoint), ctx({ agent: 'claude' }));
+      await readSse(first);
+    }
+  });
+
   it('prompt를 보낸 뒤 done {loggedIn:true}로 끝난다', async () => {
     process.env.FAKE_LOGIN = 'ok';
     process.env.FAKE_AUTH = 'logged_in';
@@ -177,6 +224,23 @@ describe('POST /api/agents/:agent/login', () => {
 });
 
 describe('DELETE /api/agents/:agent/login', () => {
+  it('정리가 끝나지 않으면 204 대신 재시도 가능한 409를 보낸다', async () => {
+    vi.useFakeTimers();
+    const controller = acquireLogin('claude')!;
+    try {
+      const pending = DELETE(jsonReq('DELETE', 'http://127.0.0.1:3000/api/agents/claude/login'), ctx({ agent: 'claude' }));
+      await vi.advanceTimersByTimeAsync(5000);
+      const res = await pending;
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('login_running');
+      expect(controller.signal.aborted).toBe(true);
+      expect(isLoginRunning('claude')).toBe(true);
+    } finally {
+      releaseLogin('claude', controller);
+      vi.useRealTimers();
+    }
+  });
+
   it('진행 중인 로그인이 없어도 204', async () => {
     const res = await DELETE(jsonReq('DELETE', 'http://127.0.0.1:3000/api/agents/claude/login'), ctx({ agent: 'claude' }));
     expect(res.status).toBe(204);

@@ -61,7 +61,7 @@ export interface ProjectDetail {
   running: { kind: RunKind; path: string | null } | null;
   exportGate: { ok: boolean; blocking: string[]; upstreamChanged: string[] };
 }
-export interface AgentStatus { installed: boolean; loggedIn: boolean; subscription: boolean; loginCommand: string }
+export interface AgentStatus { installed: boolean; loggedIn: boolean; subscription: boolean; loginCommand: string; loginRunning?: boolean }
 export type AgentsResponse = Record<AgentName, AgentStatus>;
 
 export interface Box { x1: number; y1: number; x2: number; y2: number } // 0..1, iframe 문서 전체 대비
