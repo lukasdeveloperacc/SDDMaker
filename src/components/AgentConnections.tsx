@@ -5,6 +5,7 @@ import { AGENT_NAMES, type AgentName, type AgentStatus, type AgentsResponse } fr
 import { api } from '@/lib/api';
 import { readSse } from '@/lib/sse-client';
 import { agentErrorHelp, isAgentErrorCode, type AgentErrorHelp } from '@/lib/agent-errors';
+import { USAGE_REFRESH_EVENT } from '@/lib/use-agent-run';
 import { Badge, Button, Notice } from '@/components/ui';
 import { LoginConsole } from '@/components/LoginConsole';
 
@@ -124,6 +125,7 @@ export function AgentConnections() {
         fail('로그인이 완료되지 않았습니다.');
       } else {
         setLogin(null);
+        window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
       }
     } catch {
       if (!controller.signal.aborted && abortRef.current === controller) {
@@ -165,6 +167,7 @@ export function AgentConnections() {
     setLoadError(null);
     try {
       await api('POST', `/api/agents/${agent}/logout`);
+      window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
       setLogin((prev) => prev?.agent === agent ? null : prev);
       setCode('');
       setInputError(null);

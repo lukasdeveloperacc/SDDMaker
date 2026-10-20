@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readSse } from '@/lib/sse-client';
 
+export const USAGE_REFRESH_EVENT = 'sddmaker:usage-refresh';
+
 export interface AgentRun {
   running: boolean;
   text: string;
@@ -83,6 +85,7 @@ export function useAgentRun(): AgentRun {
         stopTimer();
         abortRef.current = null;
         setRunning(false);
+        window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
       }
 
       if (outcome.done !== undefined) return { ok: true, text: outcome.done };

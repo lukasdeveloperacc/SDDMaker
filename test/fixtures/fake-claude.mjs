@@ -57,6 +57,32 @@ function valueAfter(flag) {
   return i === -1 ? null : argv[i + 1];
 }
 
+// 실제 rate_limit_event 모양 (unifiedWindows: utilization은 0..1, resetsAt은 유닉스 초). FAKE_USAGE=malformed면 깨진 값을 준다.
+function usageEvent(sid) {
+  if (process.env.FAKE_USAGE === 'malformed') {
+    return {
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: null, resetsAt: 'x' } } },
+      session_id: sid,
+    };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    type: 'rate_limit_event',
+    rate_limit_info: {
+      status: 'allowed',
+      rateLimitType: 'five_hour',
+      utilization: 0.45,
+      resetsAt: now + 2 * 3600,
+      unifiedWindows: {
+        five_hour: { utilization: 0.45, resetsAt: now + 2 * 3600 },
+        seven_day: { utilization: 0.38, resetsAt: now + 5 * 86400 },
+      },
+    },
+    session_id: sid,
+  };
+}
+
 async function run() {
   recordPid();
   const m = mode();
@@ -72,6 +98,7 @@ async function run() {
 
   const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
   emit({ type: 'system', subtype: 'init', session_id: sid });
+  if (process.env.FAKE_NULL_LINE === '1') process.stdout.write('null\n');
 
   if (m === 'resume_fail' && argv.includes('--resume')) {
     emit({ type: 'result', subtype: 'error', is_error: true, result: 'no session', session_id: sid });
@@ -104,6 +131,7 @@ async function run() {
       event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: chunks[i] } },
     });
   }
+  emit(usageEvent(sid));
   emit({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: sid });
   process.exit(0);
 }

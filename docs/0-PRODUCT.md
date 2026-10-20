@@ -24,7 +24,7 @@
 | 초기 인터뷰 (시작 전·도중 건너뛰기 가능) | [requirements/interview.md](requirements/interview.md) |
 | 문서 세트 단계별 생성·편집·피드백·승인·승인 취소 | [requirements/documents.md](requirements/documents.md) |
 | 화면 정의서 (HTML 목업, 화면 간 링크로 넘겨 보는 프로토타입, 컴포넌트 선택·그리기 주석으로 수정) | [requirements/screens.md](requirements/screens.md) |
-| 에이전트 연동 (구독 로그인 CLI, 단계별 선택) | [requirements/agent-cli.md](requirements/agent-cli.md) |
+| 에이전트 연동 (구독 로그인 CLI, 단계별 선택, 사용량 표시) | [requirements/agent-cli.md](requirements/agent-cli.md) |
 | 승인 문서 zip 내보내기 | [requirements/export.md](requirements/export.md) |
 | (예정) GitHub 저장소에서 현재 코드 기준 문서 만들기, 승인 문서 PR 올리기 | [requirements/github.md](requirements/github.md) |
 

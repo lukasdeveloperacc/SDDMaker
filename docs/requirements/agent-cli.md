@@ -35,6 +35,20 @@ Codex 기기 로그인이 차단되면 ChatGPT 보안 설정에서 기기 코드
 
 두 CLI 모두 앱 전용 저장소를 쓰므로, 호스트 터미널에서 이미 로그인해 있어도 SDDMaker에서 한 번 더 로그인해야 한다. 호스트 로그인 파일을 공유하지 않으며 컨테이너 안에서 독립적으로 인증할 수 있다. 인증 URL은 사용자의 브라우저에서 열고, Claude의 반환 코드는 앱을 통해 같은 컨테이너의 CLI로 전달한다. 터미널 직접 로그인은 컨테이너 안에서 실행한다.
 
+### 사용량
+
+[changes/010-agent-usage.md](../changes/010-agent-usage.md)
+
+- 넓은 화면에서는 상단 바 오른쪽에 구독으로 로그인된 에이전트마다 한 줄로 보여 준다: 이름, 한도 막대, `45% 2h 12m`(5시간 한도의 사용 비율·초기화까지 남은 시간), `· 38% 5d 7h`(주간 한도). 로그인되지 않은 에이전트는 표시하지 않는다.
+- 막대 길이는 5시간 한도, 5시간 한도가 없으면 주간 한도의 사용 비율이다.
+- 막대 색은 초기화 시각이 지나지 않은 두 한도 중 높은 비율을 따른다. 80% 이상이면 경고색, 100%면 위험색이다. 색만으로 구분하지 않고 비율 숫자를 항상 함께 보여 준다.
+- 값이 없거나 초기화 시각이 지났으면 `—`를 보여 준다. 남은 시간은 1분마다 다시 계산한다. 툴팁에 마지막으로 읽은 시각을 보여 준다.
+- 920px 이하 폭에서는 사용량 줄이 브랜드·메뉴 아래 별도 줄로 내려간다. 600px 이하에서는 아래의 축약 표시로 바뀐다.
+- 600px 이하 폭에서는 막대를 숨기고 `Claude 45% · Codex 1%`처럼 한 값만 보여 준다. 값은 막대 색과 같은 규칙으로 초기화 시각이 지나지 않은 두 한도 중 높은 비율이다. 대비를 위해 경고는 짙은 주황 보통 굵기, 위험은 짙은 주황 굵게 보여 준다.
+- **Claude**: 인터뷰·문서 생성 실행 출력의 `rate_limit_event`에서 값을 받아 서버 메모리에 둔다. 실행이 끝날 때마다 갱신하며, 앱을 다시 켜면 다음 실행 전까지 `—`다.
+- **Codex**: 화면을 열 때와 실행이 끝날 때 공식 `codex app-server`에서 한도를 읽는다. 모델을 실행하지 않는다.
+- 사용량을 읽지 못해도 실행을 막지 않는다.
+
 ## 규칙
 
 - **어댑터 형태**: CLI마다 어댑터를 두고 같은 형태로 맞춘다 — 입력 `{ prompt, sessionId? }`, 출력은 텍스트 조각 스트림(없을 수 있음)과 최종 `{ text, sessionId }`. 상태 확인과 로그인 실행도 어댑터가 맡는다.
@@ -89,6 +103,7 @@ Codex 기기 로그인이 차단되면 ChatGPT 보안 설정에서 기기 코드
 | 메서드·경로 | 응답 |
 | --- | --- |
 | `GET /api/agents` | `{ claude: { installed, loggedIn, subscription, loginCommand, loginRunning }, codex: { installed, loggedIn, subscription, loginCommand, loginRunning } }`. `loginCommand`는 터미널 로그인 안내 문구 |
+| `GET /api/agents/usage` | `{ claude, codex }`, 각각 `{ fiveHour, weekly, readAt } \| null`(구독 로그인이 아니면 `null`). 한도는 `{ usedPercent, resetsAt } \| null`. `usedPercent`는 0–100 정수, `resetsAt`·`readAt`은 ISO 시각. CLI 확인이 실패해도 200 |
 | `POST /api/agents/:agent/login` | `{ terminal: true }`로 PTY 로그인 시작. SSE `input_ready`·`output` → `done`/`error`. 본문이 없으면 이전 pipe 로그인 API 유지 |
 | `PUT /api/agents/:agent/login` | `{ loginId, data }` raw PTY 입력 또는 `{ loginId, cols, rows }` resize(열 2–500, 행 2–200). 성공 204, 형식 오류 400, 종료·다른 세션 409 |
 | `PUT /api/agents/:agent/login` | `{ loginId, input }`으로 로그인 CLI에 한 줄 전달 (빈 Enter 허용), 성공 204. 형식 오류 400, 종료·취소·다른 세션 409 `invalid_state` |
@@ -107,3 +122,7 @@ Codex 기기 로그인이 차단되면 ChatGPT 보안 설정에서 기기 코드
 - [ ] 로그인 URL·코드가 DB와 서버 로그에 남지 않는다.
 - [ ] 생성 중 취소하거나 브라우저를 닫으면 자식 프로세스가 남지 않는다.
 - [ ] 생성 후 작업 폴더와 SDDMaker 저장소에 새 파일이 생기지 않는다.
+- [x] 구독으로 로그인된 에이전트의 5시간·주간 사용량이 상단 바에 보인다.
+- [ ] 실행이 끝나면 Claude 값이 새로고침 없이 바뀐다.
+- [x] 로그인되지 않았거나 구독 로그인이 아닌 에이전트는 사용량을 숨긴다.
+- [ ] 390px 폭에서 상단 바에 가로 넘침이 없다.

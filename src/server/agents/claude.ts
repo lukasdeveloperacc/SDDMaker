@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, runLogout, shellQuote, spawnCli } from './exec';
 import { claudeHome } from '../env';
+import { recordClaudeRateLimit } from './usage';
 import type { AgentAdapter, RunInput, RunResult } from './types';
 
 const RUN_ARGS = [
@@ -35,11 +36,14 @@ export const claudeAdapter: AgentAdapter = {
       onLine: (line) => {
         let ev: ClaudeEvent;
         try { ev = JSON.parse(line) as ClaudeEvent; } catch { return; }
+        if (!ev || typeof ev !== 'object') return; // `null` 같은 줄이 stdout 처리기에서 던지면 서버가 죽는다
         if (ev.type === 'stream_event' && ev.event?.type === 'content_block_delta') {
           const text = ev.event.delta?.text;
           if (typeof text === 'string') onDelta?.(text);
         } else if (ev.type === 'result') {
           got.result = ev;
+        } else if (ev.type === 'rate_limit_event') {
+          try { recordClaudeRateLimit(ev); } catch { /* 사용량은 실행을 막지 않는다 */ }
         }
       },
     });

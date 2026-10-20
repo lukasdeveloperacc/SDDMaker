@@ -34,6 +34,7 @@ export const codexAdapter: AgentAdapter = {
       onLine: (line) => {
         let ev: CodexEvent;
         try { ev = JSON.parse(line) as CodexEvent; } catch { return; }
+        if (!ev || typeof ev !== 'object') return; // `null` 같은 줄이 stdout 처리기에서 던지면 서버가 죽는다
         switch (ev.type) {
           case 'thread.started':
             if (typeof ev.thread_id === 'string') st.threadId = ev.thread_id;

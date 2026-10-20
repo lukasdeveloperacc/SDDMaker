@@ -58,6 +58,7 @@ async function exec() {
 
   const threadId = resumeAt !== -1 ? argv[resumeAt + 1] : `thread-${newId()}`;
   emit({ type: 'thread.started', thread_id: threadId });
+  if (process.env.FAKE_NULL_LINE === '1') process.stdout.write('null\n');
   emit({ type: 'turn.started' });
   if (m === 'fail') {
     emit({ type: 'turn.failed', error: { message: 'fake failure' } });
@@ -78,8 +79,47 @@ async function exec() {
   process.exit(0);
 }
 
+// FAKE_USAGE별 rateLimits 모양. 시각은 응답할 때 계산한다. 기본 both.
+function usageFor(mode) {
+  const now = Math.floor(Date.now() / 1000);
+  const win = (usedPercent, windowDurationMins, resetsAt) => ({ usedPercent, windowDurationMins, resetsAt });
+  const five = (usedPercent = 45, resetsAt = now + 2 * 3600) => win(usedPercent, 300, resetsAt);
+  const week = (usedPercent = 7, resetsAt = now + 6 * 86400) => win(usedPercent, 10080, resetsAt);
+  switch (mode) {
+    case 'weekly_only': return { primary: week(), secondary: null };
+    case 'primary_null': return { primary: null, secondary: week() };
+    case 'reset_null': return { primary: five(45, null), secondary: week() };
+    case 'float': return { primary: five(7.6), secondary: week(104) };
+    case 'clash': return { primary: five(45), secondary: win(7, 300, now + 3600) };
+    case 'clash_invalid': return { primary: five(45, null), secondary: win(7, 300, now + 3600) };
+    case 'boundary': return { primary: win(45, 1440, now + 2 * 3600), secondary: win(7, 1441, now + 6 * 86400) };
+    case 'no_minutes': return { primary: win(45, null, now + 2 * 3600), secondary: win(7, 'x', now + 6 * 86400) };
+    default: return { primary: five(), secondary: week() };
+  }
+}
+
+// app-server: 사용량 읽기(JSON-RPC)만 흉내 낸다. 응답한 뒤에도 살아 있어서 앱이 끝내야 한다.
+function appServer() {
+  recordPid();
+  const usage = process.env.FAKE_USAGE || 'both';
+  const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
+  createInterface({ input: process.stdin }).on('line', (line) => {
+    let msg;
+    try { msg = JSON.parse(line); } catch { return; }
+    if (msg?.id === 1) {
+      emit({ id: 1, result: { userAgent: 'fake' } });
+      emit({ method: 'configWarning', params: { message: 'fake' } });
+    } else if (msg?.id === 2) {
+      if (usage === 'error') emit({ id: 2, error: { code: -32603, message: 'fake' } });
+      else if (usage !== 'hang') emit({ id: 2, result: { rateLimits: usageFor(usage) } });
+    }
+  });
+  hang();
+}
+
 if (argv[0] === 'login' && argv[1] === 'status') loginStatus();
 else if (argv[0] === 'logout') logout();
 else if (argv[0] === 'login') deviceLogin();
 else if (argv[0] === 'exec') exec();
+else if (argv[0] === 'app-server') appServer();
 else process.exit(2);

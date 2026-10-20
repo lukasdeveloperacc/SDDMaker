@@ -99,6 +99,20 @@ flowchart TD
 - 앱의 계정 연결은 `node-pty`로 고정된 공식 CLI 로그인 명령을 실제 PTY에서 실행하고 `xterm.js`에 raw 출력을 전달한다. 키 입력·붙여넣기·방향키·Ctrl+C·resize가 같은 프로세스에 적용된다. SSE는 출력, PUT은 세션을 검증한 raw 입력과 크기 변경을 전달한다. 범용 셸은 제공하지 않는다. 다른 창의 로그인은 조회의 `loginRunning`으로 알리고 종료 후 재연결한다. 취소 API는 자식 종료와 잠금 해제를 기다린다. 시작·충돌·종료 메타데이터만 서버 로그에 남긴다. 기존 pipe 로그인 API는 호환용으로 유지한다 ([changes/006-login-recovery.md](changes/006-login-recovery.md)). Codex 기기 코드는 OpenAI 인증 페이지에 입력한다. 실제 계정 인증·모델 생성은 별도 검증이다.
 - 앱은 자체 OAuth를 구현하지 않고 토큰을 다루지 않는다 ([requirements/agent-cli.md](requirements/agent-cli.md#규칙)).
 
+### 사용량
+
+[changes/010-agent-usage.md](changes/010-agent-usage.md). 2026-10-20 컨테이너에서 Claude Code 2.1.303·codex-cli 0.162.1 실제 계정 출력으로 확인한 형식이다. Dockerfile의 CLI 버전을 올리면 다시 확인한다.
+
+| 항목 | Claude Code | Codex |
+| --- | --- | --- |
+| 얻는 곳 | `-p` stream-json 출력의 `type: rate_limit_event` | `codex app-server`에 JSON-RPC `initialize`·`initialized`·`account/rateLimits/read`를 한 번에 보내고, 응답을 받으면 자식을 종료한다. 10초 시간 제한, 동시 요청은 하나로 합친다 |
+| 값 | `rate_limit_info.unifiedWindows.five_hour`·`seven_day`의 `utilization`(0–1), `resetsAt`(unix 초). `unifiedWindows`가 없으면 `rateLimitType`이 가리키는 최상위 값 하나 | `rateLimits.primary`·`secondary`의 `usedPercent`, `windowDurationMins`, `resetsAt` |
+| 갱신 | 실행마다 서버 메모리에 저장 (별도 조회 없음). 구독 로그인이 아니면 비운다 | 조회할 때마다 |
+
+- 두 값 모두 공식 CLI 출력이며 앱은 토큰을 읽지 않는다. 형식이 달라지면 오류 없이 `—`가 된다.
+- Codex는 `windowDurationMins`가 1440 이하면 5시간, 그보다 길면 주간 칸에 넣는다. 같은 칸에 둘이 오면 `primary`가 차지한다. 주간 한도만 있는 계정도 있다(primary 10080분, secondary 없음).
+- `usage.ts`는 Claude·Codex 어댑터를 `index.ts`를 거치지 않고 직접 import한다. `index.ts`는 로드 시점에 어댑터 표를 만들어 `claude.ts`가 먼저 로드되면 비어 버렸다. `claude.ts`와 `usage.ts`는 여전히 서로 참조하지만 호출 시점에만 쓴다.
+
 ## 외부 연동: GitHub CLI
 
 > 상태: 예정 ([changes/009-github-repo.md](changes/009-github-repo.md)). 2026-10-20에 gh 2.90.0 도움말로 확인한 값이다. 구현 때 실제 실행으로 다시 확인한다.

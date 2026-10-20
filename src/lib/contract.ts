@@ -63,6 +63,9 @@ export interface ProjectDetail {
 }
 export interface AgentStatus { installed: boolean; loggedIn: boolean; subscription: boolean; loginCommand: string; loginRunning?: boolean }
 export type AgentsResponse = Record<AgentName, AgentStatus>;
+export interface UsageWindow { usedPercent: number; resetsAt: string } // usedPercent 0..100 정수, resetsAt ISO 8601
+export interface AgentUsage { fiveHour: UsageWindow | null; weekly: UsageWindow | null; readAt: string | null } // readAt ISO
+export type UsageResponse = Record<AgentName, AgentUsage | null>; // null = 구독 로그인이 아님 → 숨김
 
 export interface Box { x1: number; y1: number; x2: number; y2: number } // 0..1, iframe 문서 전체 대비
 export type AnnotationTarget =
