@@ -20,6 +20,8 @@
 
 "모든 요구사항 문서·화면 정의서"에서 [목록에서 빠짐](#목록-확정) 문서는 제외한다.
 
+(예정) 저장소 프로젝트는 6단계가 없고 7단계가 `changes/001-baseline.md`다 ([github.md](github.md#저장소-프로젝트의-생성)).
+
 `2-DESIGN.md`와 `AGENTS.md`는 생성하지 않는다 ([0-PRODUCT.md](../0-PRODUCT.md#생성하는-문서-세트)). 아래에서 "기본 문서"는 `0-PRODUCT.md`, `1-SYSTEM-ARCHITECTURE.md`, `3-DATABASE.md`, `4-USERFLOW.md`를 말한다.
 
 ## 동작

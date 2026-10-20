@@ -99,6 +99,23 @@ flowchart TD
 - 앱의 계정 연결은 `node-pty`로 고정된 공식 CLI 로그인 명령을 실제 PTY에서 실행하고 `xterm.js`에 raw 출력을 전달한다. 키 입력·붙여넣기·방향키·Ctrl+C·resize가 같은 프로세스에 적용된다. SSE는 출력, PUT은 세션을 검증한 raw 입력과 크기 변경을 전달한다. 범용 셸은 제공하지 않는다. 다른 창의 로그인은 조회의 `loginRunning`으로 알리고 종료 후 재연결한다. 취소 API는 자식 종료와 잠금 해제를 기다린다. 시작·충돌·종료 메타데이터만 서버 로그에 남긴다. 기존 pipe 로그인 API는 호환용으로 유지한다 ([changes/006-login-recovery.md](changes/006-login-recovery.md)). Codex 기기 코드는 OpenAI 인증 페이지에 입력한다. 실제 계정 인증·모델 생성은 별도 검증이다.
 - 앱은 자체 OAuth를 구현하지 않고 토큰을 다루지 않는다 ([requirements/agent-cli.md](requirements/agent-cli.md#규칙)).
 
+## 외부 연동: GitHub CLI
+
+> 상태: 예정 ([changes/009-github-repo.md](changes/009-github-repo.md)). 2026-10-20에 gh 2.90.0 도움말로 확인한 값이다. 구현 때 실제 실행으로 다시 확인한다.
+
+| 항목 | 명령 |
+| --- | --- |
+| 상태 확인 | `gh auth status --hostname github.com` — 미로그인 시 종료 코드 1 |
+| 로그인 | `gh auth login --hostname github.com --git-protocol https --web` (기기 코드·URL 출력) |
+| 로그아웃 | `gh auth logout --hostname github.com` |
+| 클론 | `gh repo clone <owner/repo> <폴더> -- --depth 1` |
+| 권한·기본 브랜치 | `gh repo view <owner/repo> --json viewerPermission,defaultBranchRef` |
+| PR | `gh pr create --repo <owner/repo> --base <기본 브랜치> --head <브랜치> --title … --body-file -` |
+
+- 모든 `gh`는 `GH_CONFIG_DIR=<데이터 폴더>/gh-home`으로 실행한다. 로그인 PTY·잠금·취소는 에이전트 CLI 로그인과 같은 구조를 쓴다.
+- push는 git에 명령 단위로 `gh auth git-credential`을 자격 증명 도우미로 지정해 실행한다. 전역 git 설정을 바꾸지 않는다.
+- 클론은 `<데이터 폴더>/repos/<프로젝트 id>`에 두고, 저장소 프로젝트의 에이전트 작업 폴더로 쓴다. PR 커밋은 임시 worktree에서 만든다.
+
 ## 보안
 
 - 호스트 개발 서버는 `127.0.0.1`에만 연다. 컨테이너 내부 서버는 포트 전달을 위해 `0.0.0.0`에서 받고, Docker의 호스트 포트는 `127.0.0.1`에만 공개한다. 인증 없는 API가 사용자 구독으로 CLI를 실행하므로 같은 네트워크에 열면 안 된다.
@@ -127,6 +144,7 @@ CLI는 별도 프로세스 그룹으로 실행한다. 취소·연결 끊김·시
 | --- | --- | --- |
 | `CLAUDE_CLI` | Claude Code 실행 파일의 절대 경로. 인자를 넣지 않는다 | `claude` (PATH에서 찾음) |
 | `CODEX_CLI` | Codex 실행 파일의 절대 경로. 인자를 넣지 않는다 | `codex` (PATH에서 찾음) |
+| `GH_CLI` | (예정) GitHub CLI 실행 파일의 절대 경로. 인자를 넣지 않는다 | `gh` (PATH에서 찾음) |
 | `SDDMAKER_DATA_DIR` | DB 파일(`sddmaker.db`), CLI 작업 폴더(`agent-workdir/`), Claude 홈(`claude-home/`), Codex 홈(`codex-home/`)을 둘 폴더 | `./data` |
 
 - 환경변수는 `.env.local`에 둔다. 셸 alias는 자식 프로세스에 적용되지 않으므로, `claude`를 alias로 쓰는 환경(예: `npx @anthropic-ai/claude-code`)은 Claude Code를 전역 설치하고 그 경로를 `CLAUDE_CLI`에 넣는다.

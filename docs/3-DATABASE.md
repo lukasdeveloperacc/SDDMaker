@@ -23,6 +23,7 @@ projects 1 ── *    documents   (문서 경로마다 하나)
 | `name` | 프로젝트 이름 |
 | `idea` | 사용자가 처음 입력한 앱 아이디어 |
 | `design_md` | 사용자가 넣은 디자인 문서 (없으면 NULL). 생성 입력과 `2-DESIGN.md` 내보내기에 그대로 쓴다 |
+| `repo` | (예정) GitHub 저장소 `owner/repo` (없으면 NULL). 클론 폴더는 `<데이터 폴더>/repos/<id>`로 정해져 저장하지 않는다 ([requirements/github.md](requirements/github.md)) |
 | `created_at` | 생성 시각 |
 
 ### `interviews`

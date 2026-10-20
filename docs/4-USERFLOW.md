@@ -38,6 +38,8 @@
 5. **변경 기록** — `changes/001-mvp.md`를 생성·승인한다. → [requirements/documents.md](requirements/documents.md)
 6. **내보내기** — 승인된 문서 세트를 `docs/` 구조의 zip으로 내려받는다. → [requirements/export.md](requirements/export.md)
 
+(예정) **기존 저장소에서 시작** — 새 프로젝트에 GitHub 저장소를 넣으면 클론한 코드를 기준으로 같은 흐름을 밟는다. 화면 정의서는 건너뛰고, 변경 기록은 `changes/001-baseline.md`다. 마지막에 zip 대신 PR로 올릴 수 있다. GitHub 연결은 에이전트 연결 화면에서 한다. → [requirements/github.md](requirements/github.md)
+
 앞 문서를 다시 고치려면 승인을 취소한다. 뒤 문서는 그대로 남고 "앞 문서 변경됨" 표시가 붙는다.
 
 ## 화면 간 이동
