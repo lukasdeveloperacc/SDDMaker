@@ -3,6 +3,7 @@ import { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentConnections } from '@/components/AgentConnections';
+import Page from '@/app/settings/agents/page';
 import type { GithubStatus } from '@/lib/contract';
 
 vi.mock('@/components/AgentTerminal', () => ({
@@ -14,7 +15,7 @@ type Session = { controller: ReadableStreamDefaultController<Uint8Array>; closed
 let root: Root;
 let container: HTMLDivElement;
 let sessions: Session[];
-let github: GithubStatus;
+let github: GithubStatus | undefined;
 let requests: Array<{ url: string; method: string; body?: string }>;
 
 const NOT_INSTALLED: GithubStatus = { installed: false, loggedIn: false, login: null, loginCommand: 'gh auth login --hostname github.com --web' };
@@ -42,6 +43,14 @@ function rowButton(text: string) {
   const el = [...githubRow().querySelectorAll('button')].find((b) => b.textContent === text);
   if (!el) throw new Error(`버튼 없음: ${text}`);
   return el;
+}
+function section(label: string) {
+  const el = container.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
+  if (!el) throw new Error(`섹션 없음: ${label}`);
+  return el;
+}
+function providerNames(el: HTMLElement) {
+  return [...el.querySelectorAll('.connection-name')].map((n) => n.textContent);
 }
 async function render() {
   await act(async () => root.render(createElement(AgentConnections)));
@@ -139,5 +148,50 @@ describe('GitHub 연결 행', () => {
     expect(requests.at(-1)?.url).toBe('/api/agents');
     expect(githubRow().textContent).toContain('미로그인');
     expect(rowButton('계정 연결')).toBeTruthy();
+  });
+});
+
+describe('연결 화면', () => {
+  it('제목과 안내 문구를 보여 준다', async () => {
+    await act(async () => root.render(createElement(Page)));
+    expect(container.querySelector('h1')?.textContent).toBe('연결');
+    expect(container.querySelector('h1 + p')?.textContent).toBe('문서 생성에 쓸 AI 에이전트와 GitHub 계정을 연결하세요.');
+  });
+});
+
+describe('연결 섹션', () => {
+  it('AI 에이전트와 GitHub 섹션에 제목·설명을 두고 소속 연결을 나눠 담는다', async () => {
+    await render();
+    expect([...container.querySelectorAll('[role="tabpanel"] > section')].map((s) => s.getAttribute('aria-label'))).toEqual(['AI 에이전트', 'GitHub']);
+    const ai = section('AI 에이전트');
+    expect(ai.querySelector('h2')?.textContent).toBe('AI 에이전트');
+    expect(ai.querySelector('h2 + p')?.textContent).toBe('인터뷰와 문서 생성에 쓰는 구독 계정입니다.');
+    expect(providerNames(ai)).toEqual(['Claude Code', 'Codex']);
+    const gh = section('GitHub');
+    expect(gh.querySelector('h2')?.textContent).toBe('GitHub');
+    expect(gh.querySelector('h2 + p')?.textContent).toBe('저장소를 받아 문서를 만들고 PR을 올릴 때 씁니다.');
+    expect(providerNames(gh)).toEqual(['GitHub']);
+  });
+
+  it('로그인 방식 탭은 하나뿐이고 두 섹션이 모두 그 탭패널 안에 있다', async () => {
+    await render();
+    expect(container.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
+    const panel = container.querySelector<HTMLElement>('[role="tabpanel"]')!;
+    expect(panel.querySelector('[role="tablist"]')).toBeNull();
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs.map((t) => t.textContent)).toEqual(['간편 로그인', '터미널']);
+    expect(tabs.every((t) => t.getAttribute('aria-controls') === panel.id)).toBe(true);
+    expect(panel.contains(section('AI 에이전트'))).toBe(true);
+    expect(panel.contains(section('GitHub'))).toBe(true);
+    await act(async () => tabs[1].click());
+    expect(panel.getAttribute('aria-labelledby')).toBe(tabs[1].id);
+  });
+
+  it('응답에 github가 없으면 GitHub 섹션을 만들지 않는다', async () => {
+    github = undefined;
+    await render();
+    expect(container.querySelector('section[aria-label="GitHub"]')).toBeNull();
+    expect(providerNames(section('AI 에이전트'))).toEqual(['Claude Code', 'Codex']);
   });
 });

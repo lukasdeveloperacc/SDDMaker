@@ -61,7 +61,7 @@ export function createErrorView(code: string, message: string, repoSubmitted: bo
     case 'repo_not_found':
       return { target: 'repo', message: '저장소를 찾을 수 없습니다. 주소를 확인하고, 연결한 GitHub 계정으로 볼 수 있는지 확인하세요.' };
     case 'github_not_connected':
-      return { target: 'notice', message: 'GitHub에 연결되어 있지 않습니다. 에이전트 연결 화면에서 GitHub에 로그인하세요.', link: true };
+      return { target: 'notice', message: 'GitHub에 연결되어 있지 않습니다. 연결 화면에서 GitHub에 로그인하세요.', link: true };
     case 'gh_not_found':
       return { target: 'notice', message: 'gh가 설치되어 있지 않습니다. 설치하거나 GH_CLI로 경로를 지정하세요. 저장소 없이 만들 수 있습니다.' };
     case 'clone_failed':
@@ -121,7 +121,7 @@ export function CreateProjectForm({ onCancel }: { onCancel: () => void }) {
               {errorView.link && (
                 <>
                   {' '}
-                  <Link href="/settings/agents">에이전트 연결로 이동</Link>
+                  <Link href="/settings/agents">연결 화면으로 이동</Link>
                 </>
               )}
             </Notice>

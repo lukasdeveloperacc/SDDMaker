@@ -30,7 +30,7 @@ export function RunStatus({ run, agent }: { run: AgentRun; agent: AgentName }) {
       <Notice tone="error" title={help?.title ?? '실행하지 못했습니다'}>
         <p className="notice-body">{help?.action === 'login' ? error.message : help?.body ?? error.message}</p>
         {help && help.action !== 'login' && <p className="caption">{error.message}</p>}
-        {help?.action === 'login' && <Link href="/settings/agents">에이전트 연결</Link>}
+        {help?.action === 'login' && <Link href="/settings/agents">연결 화면으로 이동</Link>}
         {error.items && error.items.length > 0 && (
           <ul className="caption">
             {error.items.map((item) => (

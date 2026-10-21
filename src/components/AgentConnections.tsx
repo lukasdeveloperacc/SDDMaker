@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { LOGIN_TARGETS, type AgentStatus, type AgentsResponse, type GithubStatus, type LoginTarget } from '@/lib/contract';
+import { type AgentStatus, type AgentsResponse, type GithubStatus, type LoginTarget } from '@/lib/contract';
 import { api } from '@/lib/api';
 import { readSse } from '@/lib/sse-client';
 import { agentErrorHelp, isAgentErrorCode, type AgentErrorHelp } from '@/lib/agent-errors';
@@ -237,8 +237,88 @@ export function AgentConnections() {
     }
   }
 
+  function renderProvider(a: LoginTarget) {
+    const s = agents?.[a];
+    const showLogin = s !== undefined && needsLogin(s);
+    const loginHere = login?.agent === a ? login : null;
+    const elsewhere = s?.loginRunning && !loginHere?.running;
+    let authUrl: string | null = null;
+    if (loginHere?.prompt) {
+      try {
+        const url = new URL(loginHere.prompt.url);
+        if (url.protocol === 'https:' || url.protocol === 'http:') authUrl = url.href;
+      } catch { /* invalid CLI URLs are never rendered as links */ }
+    }
+    return (
+      <div key={a} className="connection-provider">
+        <div className="connection-heading">
+          <div className="connection-identity">
+            <span className="connection-mark" data-agent={a} aria-hidden="true">
+              {a === 'claude' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2v20M2 12h20M5 5l14 14M5 19 19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18" /></svg> : a === 'codex' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m8 5-6 7 6 7m8-14 6 7-6 7M14 3l-4 18" /></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 4-6 4-12 8" /></svg>}
+            </span>
+            <span className="connection-name">{LOGIN_LABEL[a]}</span>
+            <span className="agent-help">
+              <a href={HELP_URL[a]} target="_blank" rel="noopener noreferrer" aria-label={`${LOGIN_LABEL[a]} 로그인 도움말`} aria-describedby={`${groupName}-${a}-help`}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16v1" /></svg>
+              </a>
+              <span role="tooltip" id={`${groupName}-${a}-help`}>{a === 'github' ? 'GitHub 페이지에서 기기 코드를 입력하세요.' : a === 'codex' ? '기기 로그인이 막히면 ChatGPT 설정 → 보안에서 허용하세요.' : mode === 'terminal' ? '브라우저에서 받은 인증 코드를 터미널에 붙여넣으세요.' : '브라우저에서 받은 인증 코드를 아래에 붙여넣으세요.'}</span>
+            </span>
+          </div>
+          <div className="connection-actions">
+            {s ? statusBadge(s) : <Badge tone="neutral">확인 중</Badge>}
+            {s?.loggedIn && !elsewhere && !loginHere?.running && (
+              <Button variant="utility" disabled={busy} aria-label={`${LOGIN_LABEL[a]} 연결 해제`}
+                title="SDDMaker에 저장된 로그인만 해제합니다." onClick={() => void disconnect(a)}>
+                {disconnecting === a ? '해제 중…' : '연결 해제'}
+              </Button>
+            )}
+            {showLogin && !elsewhere && !loginHere?.running && (
+              <Button variant="utility" disabled={busy} onClick={() => void startLogin(a)}>계정 연결</Button>
+            )}
+            {elsewhere && <Button variant="utility" disabled={busy} onClick={() => void restartLogin(a)}>{cancelling === a ? '종료 중…' : '연결 재시작'}</Button>}
+          </div>
+        </div>
+        {a === 'github' && s && !s.installed && <p className="caption">gh 설치 후 GH_CLI로 경로를 지정할 수 있습니다.</p>}
+        {elsewhere && <p className="caption">로그인 진행 중</p>}
+        {loginHere && (
+          <div className="connection-flow">
+            {mode === 'terminal' ? (
+              <LoginConsole key={loginHere.attempt} agent={a} output={loginHere.output} outputLength={loginHere.outputLength} loginId={loginHere.loginId}
+                running={loginHere.running} onCancel={() => void cancelLogin(a)} />
+            ) : loginHere.running ? (
+              <div className="stack">
+                <div className="connection-browser-action">
+                  {authUrl ? <a className="btn btn-primary" href={authUrl} target="_blank" rel="noopener noreferrer">인증 페이지 열기</a> : <span className="caption" role="status">로그인 준비 중…</span>}
+                  {authUrl && <span className="caption" role="status">인증 대기 중</span>}
+                </div>
+                {a !== 'claude' && loginHere.prompt?.code && (
+                  <div className="connection-code"><code>{loginHere.prompt.code}</code><Button variant="utility" onClick={() => void copyCode(loginHere.prompt!.code!)}>{copied ? '복사됨' : '코드 복사'}</Button></div>
+                )}
+                {a === 'claude' && authUrl && (
+                  <form className="connection-code-form" onSubmit={(event) => { event.preventDefault(); void submitCode(); }}>
+                    <label htmlFor={`${groupName}-auth-code`}>인증 코드</label>
+                    <div className="row"><input id={`${groupName}-auth-code`} type="password" autoComplete="off" spellCheck={false} value={code} onChange={(event) => setCode(event.target.value)} placeholder="브라우저에서 받은 코드" disabled={submitting} />
+                      <Button type="submit" variant="primary" disabled={!loginHere.loginId || !code.trim() || submitting}>{submitting ? '확인 중…' : '연결 완료'}</Button></div>
+                  </form>
+                )}
+                {inputError && <Notice tone="error">{inputError}</Notice>}
+                <div><Button variant="utility" disabled={cancelling !== null} onClick={() => void cancelLogin(a)}>{cancelling === a ? '종료 중…' : '취소'}</Button></div>
+              </div>
+            ) : null}
+            {loginHere.error && (
+              <Notice tone="error" title={loginHere.error.help.title}>
+                <p className="caption">{loginHere.error.message}</p>
+                <div><Button variant="utility" disabled={busy} onClick={() => void startLogin(a)}>다시 시도</Button></div>
+              </Notice>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <section className="agent-connections" aria-label="에이전트 계정 연결">
+    <section className="agent-connections" aria-label="연결">
       <div className="connection-tabs" role="tablist" aria-label="로그인 방식">
         {(['guided', 'terminal'] as const).map((tab) => (
           <button key={tab} type="button" role="tab" id={`${groupName}-${tab}-tab`}
@@ -251,86 +331,19 @@ export function AgentConnections() {
       </div>
       <div role="tabpanel" id={`${groupName}-panel`} aria-labelledby={`${groupName}-${mode}-tab`}>
         {loadError && <Notice tone="error">{loadError}</Notice>}
-        {LOGIN_TARGETS.map((a) => {
-          const s = agents?.[a];
-          if (a === 'github' && !s) return null; // 응답에 github가 없으면 행을 만들지 않는다
-          const showLogin = s !== undefined && needsLogin(s);
-          const loginHere = login?.agent === a ? login : null;
-          const elsewhere = s?.loginRunning && !loginHere?.running;
-          let authUrl: string | null = null;
-          if (loginHere?.prompt) {
-            try {
-              const url = new URL(loginHere.prompt.url);
-              if (url.protocol === 'https:' || url.protocol === 'http:') authUrl = url.href;
-            } catch { /* invalid CLI URLs are never rendered as links */ }
-          }
-          return (
-            <div key={a} className="connection-provider">
-              <div className="connection-heading">
-                <div className="connection-identity">
-                  <span className="connection-mark" data-agent={a} aria-hidden="true">
-                    {a === 'claude' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2v20M2 12h20M5 5l14 14M5 19 19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18" /></svg> : a === 'codex' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m8 5-6 7 6 7m8-14 6 7-6 7M14 3l-4 18" /></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 4-6 4-12 8" /></svg>}
-                  </span>
-                  <span className="connection-name">{LOGIN_LABEL[a]}</span>
-                  <span className="agent-help">
-                    <a href={HELP_URL[a]} target="_blank" rel="noopener noreferrer" aria-label={`${LOGIN_LABEL[a]} 로그인 도움말`} aria-describedby={`${groupName}-${a}-help`}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16v1" /></svg>
-                    </a>
-                    <span role="tooltip" id={`${groupName}-${a}-help`}>{a === 'github' ? 'GitHub 페이지에서 기기 코드를 입력하세요.' : a === 'codex' ? '기기 로그인이 막히면 ChatGPT 설정 → 보안에서 허용하세요.' : mode === 'terminal' ? '브라우저에서 받은 인증 코드를 터미널에 붙여넣으세요.' : '브라우저에서 받은 인증 코드를 아래에 붙여넣으세요.'}</span>
-                  </span>
-                </div>
-                <div className="connection-actions">
-                  {s ? statusBadge(s) : <Badge tone="neutral">확인 중</Badge>}
-                  {s?.loggedIn && !elsewhere && !loginHere?.running && (
-                    <Button variant="utility" disabled={busy} aria-label={`${LOGIN_LABEL[a]} 연결 해제`}
-                      title="SDDMaker에 저장된 로그인만 해제합니다." onClick={() => void disconnect(a)}>
-                      {disconnecting === a ? '해제 중…' : '연결 해제'}
-                    </Button>
-                  )}
-                  {showLogin && !elsewhere && !loginHere?.running && (
-                    <Button variant="utility" disabled={busy} onClick={() => void startLogin(a)}>계정 연결</Button>
-                  )}
-                  {elsewhere && <Button variant="utility" disabled={busy} onClick={() => void restartLogin(a)}>{cancelling === a ? '종료 중…' : '연결 재시작'}</Button>}
-                </div>
-              </div>
-              {a === 'github' && s && !s.installed && <p className="caption">gh 설치 후 GH_CLI로 경로를 지정할 수 있습니다.</p>}
-              {elsewhere && <p className="caption">로그인 진행 중</p>}
-              {loginHere && (
-                <div className="connection-flow">
-                  {mode === 'terminal' ? (
-                    <LoginConsole key={loginHere.attempt} agent={a} output={loginHere.output} outputLength={loginHere.outputLength} loginId={loginHere.loginId}
-                      running={loginHere.running} onCancel={() => void cancelLogin(a)} />
-                  ) : loginHere.running ? (
-                    <div className="stack">
-                      <div className="connection-browser-action">
-                        {authUrl ? <a className="btn btn-primary" href={authUrl} target="_blank" rel="noopener noreferrer">인증 페이지 열기</a> : <span className="caption" role="status">로그인 준비 중…</span>}
-                        {authUrl && <span className="caption" role="status">인증 대기 중</span>}
-                      </div>
-                      {a !== 'claude' && loginHere.prompt?.code && (
-                        <div className="connection-code"><code>{loginHere.prompt.code}</code><Button variant="utility" onClick={() => void copyCode(loginHere.prompt!.code!)}>{copied ? '복사됨' : '코드 복사'}</Button></div>
-                      )}
-                      {a === 'claude' && authUrl && (
-                        <form className="connection-code-form" onSubmit={(event) => { event.preventDefault(); void submitCode(); }}>
-                          <label htmlFor={`${groupName}-auth-code`}>인증 코드</label>
-                          <div className="row"><input id={`${groupName}-auth-code`} type="password" autoComplete="off" spellCheck={false} value={code} onChange={(event) => setCode(event.target.value)} placeholder="브라우저에서 받은 코드" disabled={submitting} />
-                            <Button type="submit" variant="primary" disabled={!loginHere.loginId || !code.trim() || submitting}>{submitting ? '확인 중…' : '연결 완료'}</Button></div>
-                        </form>
-                      )}
-                      {inputError && <Notice tone="error">{inputError}</Notice>}
-                      <div><Button variant="utility" disabled={cancelling !== null} onClick={() => void cancelLogin(a)}>{cancelling === a ? '종료 중…' : '취소'}</Button></div>
-                    </div>
-                  ) : null}
-                  {loginHere.error && (
-                    <Notice tone="error" title={loginHere.error.help.title}>
-                      <p className="caption">{loginHere.error.message}</p>
-                      <div><Button variant="utility" disabled={busy} onClick={() => void startLogin(a)}>다시 시도</Button></div>
-                    </Notice>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        <section className="connection-section" aria-label="AI 에이전트">
+          <h2 className="h3">AI 에이전트</h2>
+          <p className="caption">인터뷰와 문서 생성에 쓰는 구독 계정입니다.</p>
+          {(['claude', 'codex'] as const).map(renderProvider)}
+        </section>
+        {/* 응답에 github가 없으면 섹션을 만들지 않는다 */}
+        {agents?.github && (
+          <section className="connection-section" aria-label="GitHub">
+            <h2 className="h3">GitHub</h2>
+            <p className="caption">저장소를 받아 문서를 만들고 PR을 올릴 때 씁니다.</p>
+            {renderProvider('github')}
+          </section>
+        )}
       </div>
     </section>
   );

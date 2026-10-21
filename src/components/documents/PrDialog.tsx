@@ -116,7 +116,7 @@ export function PrDialog({
             <p className="notice-body" style={{ margin: 0 }}>{error.message}</p>
             {error.connect && (
               <p className="notice-body" style={{ margin: 0 }}>
-                <Link href="/settings/agents">에이전트 연결에서 GitHub 확인</Link>
+                <Link href="/settings/agents">연결에서 GitHub 확인</Link>
               </p>
             )}
           </Notice>

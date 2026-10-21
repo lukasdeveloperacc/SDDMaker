@@ -87,7 +87,7 @@ export function ExportPanel({ projectId, detail }: { projectId: number; detail: 
           <Notice tone="warn" title="GitHub 연결이 필요합니다">
             <p className="notice-body">{infoError.message}</p>
             <p className="notice-body">
-              <Link href="/settings/agents">에이전트 연결에서 GitHub 확인</Link>
+              <Link href="/settings/agents">연결에서 GitHub 확인</Link>
             </p>
           </Notice>
         ) : (

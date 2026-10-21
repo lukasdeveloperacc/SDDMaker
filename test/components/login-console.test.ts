@@ -88,7 +88,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('에이전트 연결 해제', () => {
+describe('연결 해제', () => {
   it.each(['claude', 'codex'] as const)('%s의 연결을 해제한 뒤 상태를 다시 읽고 재연결을 제공한다', async (agent) => {
     loggedIn = true;
     await render(false);
