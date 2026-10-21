@@ -5,7 +5,7 @@ import type { AgentUsage, UsageWindow } from '@/lib/contract';
 import { GET } from '@/app/api/agents/usage/route';
 import { claudeAdapter } from '@/server/agents/claude';
 import { codexAdapter } from '@/server/agents/codex';
-import { readCodexUsage, recordClaudeRateLimit, resetUsageForTest, toWindow } from '@/server/agents/usage';
+import { parseClaudeUsage, readClaudeUsage, readCodexUsage, recordClaudeRateLimit, resetUsageForTest, toWindow } from '@/server/agents/usage';
 import { dataDir } from '@/server/env';
 
 const HOUR = 3600;
@@ -183,6 +183,54 @@ describe('Claude 실행 중 사용량 기록', () => {
   });
 });
 
+describe('Claude /usage 해석', () => {
+  const NOW = Date.UTC(2026, 9, 21, 7, 30); // 2026-10-21 07:30 UTC
+  const TEXT = [
+    'You are currently using your subscription to power your Claude Code usage',
+    '',
+    'Current session: 47% used · resets Oct 21 at 10:50am (UTC)',
+    'Current week (all models): 63% used · resets Oct 25 at 4pm (UTC)',
+    'Current week (Fable): 1% used · resets Oct 25 at 4pm (UTC)',
+  ].join('\n');
+
+  it('세션은 5시간, all models 주간은 주간 창이다 (모델별 주간 줄은 쓰지 않는다)', () => {
+    expect(parseClaudeUsage(TEXT, NOW)).toEqual({
+      fiveHour: { usedPercent: 47, resetsAt: '2026-10-21T10:50:00.000Z' },
+      weekly: { usedPercent: 63, resetsAt: '2026-10-25T16:00:00.000Z' },
+      readAt: new Date(NOW).toISOString(),
+    });
+  });
+
+  it('날짜가 없으면 오늘(지났으면 내일), 12am·12pm과 해 넘김을 맞춘다', () => {
+    const at = (line: string, now = NOW) => parseClaudeUsage(`Current session: 5% used · resets ${line}`, now).fiveHour?.resetsAt;
+    expect(at('9am (UTC)')).toBe('2026-10-21T09:00:00.000Z');
+    expect(at('7am (UTC)')).toBe('2026-10-22T07:00:00.000Z');
+    expect(at('Oct 22 at 12am (UTC)')).toBe('2026-10-22T00:00:00.000Z');
+    expect(at('Oct 22 at 12:05pm (UTC)')).toBe('2026-10-22T12:05:00.000Z');
+    expect(at('Jan 2 at 1am (UTC)', Date.UTC(2026, 11, 30))).toBe('2027-01-02T01:00:00.000Z');
+  });
+
+  it('한도 줄이 없거나 모양이 다르면 빈 값이다', () => {
+    expect(parseClaudeUsage('Unknown command: /usage', NOW)).toEqual({ fiveHour: null, weekly: null, readAt: null });
+    expect(parseClaudeUsage('Current session: 47% used · resets Foo 21 at 10am (UTC)', NOW).fiveHour).toBeNull();
+  });
+
+  it('가짜 CLI에서 읽고 TZ=UTC로 실행한다', async () => {
+    const before = Date.now();
+    const usage = await readClaudeUsage();
+    expect(usage).toMatchObject({ fiveHour: { usedPercent: 52 }, weekly: { usedPercent: 31 } });
+    // 출력은 분 단위라 최대 1분 이르다. 가짜 CLI는 TZ가 UTC가 아니면 다른 시간대를 적어 읽기가 실패한다.
+    const ms = Date.parse(usage.fiveHour!.resetsAt);
+    expect(ms).toBeGreaterThan(before + 2 * HOUR * 1000 - 61_000);
+    expect(ms).toBeLessThanOrEqual(Date.now() + 2 * HOUR * 1000);
+  });
+
+  it('응답이 없으면 제한 시간 뒤 빈 값이다', async () => {
+    process.env.FAKE_CLAUDE_USAGE = 'hang';
+    expect(await readClaudeUsage(300)).toEqual({ fiveHour: null, weekly: null, readAt: null });
+  });
+});
+
 describe('Codex 사용량 읽기 (app-server)', () => {
   it.each<[string, Want, Want]>([
     ['both', { usedPercent: 45, offsetSec: 2 * HOUR }, { usedPercent: 7, offsetSec: 6 * DAY }],
@@ -242,12 +290,16 @@ describe('Codex 사용량 읽기 (app-server)', () => {
 });
 
 describe('GET /api/agents/usage', () => {
-  it('로그인된 CLI는 Claude 빈 값과 Codex 값을 준다', async () => {
+  it('로그인된 CLI는 실행 전에도 Claude 값(/usage)과 Codex 값을 준다', async () => {
     process.env.FAKE_AUTH = 'logged_in';
     const res = await GET();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      claude: { fiveHour: null, weekly: null, readAt: null },
+      claude: {
+        fiveHour: { usedPercent: 52, resetsAt: ISO_AT },
+        weekly: { usedPercent: 31, resetsAt: ISO_AT },
+        readAt: ISO_AT,
+      },
       codex: {
         fiveHour: { usedPercent: 45, resetsAt: ISO_AT },
         weekly: { usedPercent: 7, resetsAt: ISO_AT },
@@ -256,7 +308,9 @@ describe('GET /api/agents/usage', () => {
     });
   });
 
-  it('Claude 실행 뒤에는 Claude 값이 응답에 담긴다', async () => {
+  it('/usage를 읽지 못하면 Claude 실행에서 받아 둔 값을 준다', async () => {
+    process.env.FAKE_CLAUDE_USAGE = 'none';
+    expect((await (await GET()).json()).claude).toEqual({ fiveHour: null, weekly: null, readAt: null });
     await claudeAdapter.run({ prompt: '대상 문서: 0-PRODUCT.md', signal: signal() });
     const body = await (await GET()).json();
     expect(body.claude).toMatchObject({ fiveHour: { usedPercent: 45 }, weekly: { usedPercent: 38 } });

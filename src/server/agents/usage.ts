@@ -7,8 +7,9 @@ import { spawnCli } from './exec';
 const g = globalThis as typeof globalThis & { __sddmakerUsage?: { claude: AgentUsage | null } };
 const store: { claude: AgentUsage | null } = (g.__sddmakerUsage ??= { claude: null });
 
-// Codex 읽기는 동시에 하나만 돈다. 같은 시점의 요청은 그 결과를 함께 받는다.
+// 읽기는 CLI마다 동시에 하나만 돈다. 같은 시점의 요청은 그 결과를 함께 받는다.
 let codexInFlight: Promise<AgentUsage> | null = null;
+let claudeInFlight: Promise<AgentUsage> | null = null;
 
 const emptyUsage = (): AgentUsage => ({ fiveHour: null, weekly: null, readAt: null });
 
@@ -45,6 +46,57 @@ export function recordClaudeRateLimit(ev: unknown): void {
     weekly: weekly ?? prev.weekly,
     readAt: new Date().toISOString(),
   };
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// `/usage` 한 줄: `<label>: 47% used · resets Oct 21 at 10:50am (UTC)`. 날짜가 없으면 오늘(지났으면 내일)이다.
+// 연도는 출력에 없어서, 하루 넘게 지난 날짜면 다음 해로 본다.
+function claudeUsageLine(text: string, label: string, now: number): UsageWindow | null {
+  const m = text.match(new RegExp(`^${label}: (\\d+)% used\\D*?resets (?:([A-Z][a-z]{2}) (\\d{1,2}) at )?(\\d{1,2})(?::(\\d{2}))?(am|pm) \\(UTC\\)`, 'm'));
+  if (!m) return null;
+  const [, pct, mon, day, h, min, ampm] = m;
+  const hour = (Number(h) % 12) + (ampm === 'pm' ? 12 : 0);
+  const today = new Date(now);
+  let at: number;
+  if (mon) {
+    const month = MONTHS.indexOf(mon);
+    if (month < 0) return null;
+    const at0 = (y: number) => Date.UTC(y, month, Number(day), hour, Number(min ?? 0));
+    at = at0(today.getUTCFullYear());
+    if (at < now - 86_400_000) at = at0(today.getUTCFullYear() + 1);
+  } else {
+    at = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), hour, Number(min ?? 0));
+    if (at < now) at += 86_400_000;
+  }
+  return toWindow(Number(pct), at / 1000);
+}
+
+// `claude -p /usage`의 결과 글에서 5시간(Current session)·주간(all models) 창을 읽는다. 둘 다 없으면 빈 값.
+export function parseClaudeUsage(text: string, now = Date.now()): AgentUsage {
+  const fiveHour = claudeUsageLine(text, 'Current session', now);
+  const weekly = claudeUsageLine(text, 'Current week \\(all models\\)', now);
+  return fiveHour || weekly ? { fiveHour, weekly, readAt: new Date(now).toISOString() } : emptyUsage();
+}
+
+// 공식 CLI의 `/usage`는 모델을 부르지 않고(토큰 0) 한도를 글로 돌려준다. TZ=UTC로 시각을 UTC로 받는다.
+function readClaudeOnce(timeoutMs: number): Promise<AgentUsage> {
+  let out = '';
+  return spawnCli('claude', ['-p', '/usage', '--output-format', 'json', '--setting-sources', '', '--strict-mcp-config', '--tools', ''], {
+    stdin: '',
+    envOverride: { TZ: 'UTC' },
+    signal: new AbortController().signal,
+    timeoutMs,
+    onLine: (line) => { out += line; },
+  }).then(() => {
+    const r = JSON.parse(out) as { result?: unknown };
+    return typeof r.result === 'string' ? parseClaudeUsage(r.result) : emptyUsage();
+  }).catch(() => emptyUsage()); // 실패·시간 초과·모양이 다른 출력은 빈 값. 출력 원문은 로그에 남기지 않는다.
+}
+
+export function readClaudeUsage(timeoutMs = 15_000): Promise<AgentUsage> {
+  if (!claudeInFlight) claudeInFlight = readClaudeOnce(timeoutMs).finally(() => { claudeInFlight = null; });
+  return claudeInFlight;
 }
 
 // 5시간 창은 1440분 이하, 그보다 길면 주간 창이다. 같은 칸에 둘이 오면 값이 깨졌어도 primary가 차지한다.
@@ -114,7 +166,11 @@ async function usageOf(agent: AgentName): Promise<AgentUsage | null> {
     if (agent === 'claude') store.claude = null; // 이전 계정의 값이 남지 않게 한다
     return null;
   }
-  return agent === 'claude' ? (store.claude ?? emptyUsage()) : readCodexUsage();
+  if (agent === 'codex') return readCodexUsage();
+  // 읽기에 실패하면 실행 출력에서 받아 둔 마지막 값을 쓴다.
+  const read = await readClaudeUsage();
+  if (read.fiveHour || read.weekly) store.claude = read;
+  return store.claude ?? emptyUsage();
 }
 
 export async function getUsage(): Promise<UsageResponse> {
@@ -122,8 +178,9 @@ export async function getUsage(): Promise<UsageResponse> {
   return Object.fromEntries(entries) as UsageResponse;
 }
 
-// 테스트 전용: 저장된 Claude 값과 진행 중인 Codex 읽기를 비운다.
+// 테스트 전용: 저장된 Claude 값과 진행 중인 읽기를 비운다.
 export function resetUsageForTest(): void {
   store.claude = null;
   codexInFlight = null;
+  claudeInFlight = null;
 }

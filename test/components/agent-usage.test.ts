@@ -192,12 +192,26 @@ describe('AgentUsage 표시', () => {
 });
 
 describe('AgentUsage 갱신', () => {
-  it('1분마다 다시 계산해 리셋된 창을 —로 바꾸고, 다시 읽지는 않는다', async () => {
+  it('1분마다 다시 계산해 리셋된 창을 —로 바꾸고, 탭이 보이면 다시 읽는다', async () => {
     await mount({ claude: usage(win(45, 30_000)), codex: null });
     expect(part('Claude', '.usage-fivehour')).toBe('45% <1m');
     await act(async () => { vi.advanceTimersByTime(MIN); });
+    await flush();
     expect(part('Claude', '.usage-fivehour')).toBe('—');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('탭이 숨어 있으면 1분이 지나도 읽지 않고, 돌아오면 바로 읽는다', async () => {
+    await mount({ claude: usage(win(45, LEFT)), codex: null });
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    await act(async () => { vi.advanceTimersByTime(MIN); });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    hidden.mockReturnValue(false);
+    payload = { claude: usage(win(70, LEFT)), codex: null };
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(part('Claude', '.usage-fivehour')).toBe('70% 2h 11m');
   });
 
   it('USAGE_REFRESH_EVENT를 받으면 다시 읽고 새 값을 보여 준다', async () => {

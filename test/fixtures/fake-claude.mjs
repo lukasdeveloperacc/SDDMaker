@@ -83,6 +83,27 @@ function usageEvent(sid) {
   };
 }
 
+// `claude -p /usage --output-format json` (TZ=UTC). FAKE_CLAUDE_USAGE=none이면 한도 줄이 없다, hang이면 멈춘다.
+async function usage() {
+  recordPid();
+  const m = process.env.FAKE_CLAUDE_USAGE;
+  if (m === 'hang') await hang();
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const at = (ms) => {
+    const d = new Date(Date.now() + ms);
+    const h = d.getUTCHours();
+    return `${MON[d.getUTCMonth()]} ${d.getUTCDate()} at ${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')}${h < 12 ? 'am' : 'pm'} (${process.env.TZ || 'Asia/Seoul'})`;
+  };
+  const text = m === 'none'
+    ? 'You are currently using your subscription to power your Claude Code usage\n'
+    : 'You are currently using your subscription to power your Claude Code usage\n\n'
+      + `Current session: 52% used · resets ${at(2 * 3600_000)}\n`
+      + `Current week (all models): 31% used · resets ${at(5 * 86400_000)}\n`
+      + `Current week (Fable): 1% used · resets ${at(5 * 86400_000)}\n`;
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: text}) + '\n');
+  process.exit(0);
+}
+
 async function run() {
   recordPid();
   const m = mode();
@@ -139,4 +160,5 @@ async function run() {
 if (argv[0] === 'auth' && argv[1] === 'status') authStatus();
 else if (argv[0] === 'auth' && argv[1] === 'logout') logout();
 else if (argv[0] === 'auth' && argv[1] === 'login') login();
+else if (argv[0] === '-p' && argv[1] === '/usage') usage();
 else run();

@@ -102,13 +102,13 @@ flowchart TD
 
 ### 사용량
 
-[changes/010-agent-usage.md](changes/010-agent-usage.md). 2026-10-20 컨테이너에서 Claude Code 2.1.303·codex-cli 0.162.1 실제 계정 출력으로 확인한 형식이다. Dockerfile의 CLI 버전을 올리면 다시 확인한다.
+[changes/010-agent-usage.md](changes/010-agent-usage.md), [changes/013-live-usage.md](changes/013-live-usage.md). Claude `/usage`는 2026-10-21 호스트 Claude Code 2.1.306 실제 계정으로 확인했다. 2026-10-20 컨테이너에서 Claude Code 2.1.303·codex-cli 0.162.1 실제 계정 출력으로 확인한 형식이다. Dockerfile의 CLI 버전을 올리면 다시 확인한다.
 
 | 항목 | Claude Code | Codex |
 | --- | --- | --- |
-| 얻는 곳 | `-p` stream-json 출력의 `type: rate_limit_event` | `codex app-server`에 JSON-RPC `initialize`·`initialized`·`account/rateLimits/read`를 한 번에 보내고, 응답을 받으면 자식을 종료한다. 10초 시간 제한, 동시 요청은 하나로 합친다 |
-| 값 | `rate_limit_info.unifiedWindows.five_hour`·`seven_day`의 `utilization`(0–1), `resetsAt`(unix 초). `unifiedWindows`가 없으면 `rateLimitType`이 가리키는 최상위 값 하나 | `rateLimits.primary`·`secondary`의 `usedPercent`, `windowDurationMins`, `resetsAt` |
-| 갱신 | 실행마다 서버 메모리에 저장 (별도 조회 없음). 구독 로그인이 아니면 비운다 | 조회할 때마다 |
+| 얻는 곳 | 조회 때 `claude -p /usage --output-format json`(`TZ=UTC`, 모델 호출 없음·토큰 0)의 `result` 글. 15초 시간 제한, 동시 요청은 하나로 합친다. 실행 중에는 `-p` stream-json 출력의 `type: rate_limit_event`도 저장한다 | `codex app-server`에 JSON-RPC `initialize`·`initialized`·`account/rateLimits/read`를 한 번에 보내고, 응답을 받으면 자식을 종료한다. 10초 시간 제한, 동시 요청은 하나로 합친다 |
+| 값 | `/usage`: `Current session: 47% used · resets Oct 21 at 10:50am (UTC)`는 5시간, `Current week (all models)`는 주간. 날짜가 없으면 오늘(지났으면 내일), 연도는 하루 넘게 지났으면 다음 해. 실행 이벤트: `rate_limit_info.unifiedWindows.five_hour`·`seven_day`의 `utilization`(0–1), `resetsAt`(unix 초). `unifiedWindows`가 없으면 `rateLimitType`이 가리키는 최상위 값 하나 | `rateLimits.primary`·`secondary`의 `usedPercent`, `windowDurationMins`, `resetsAt` |
+| 갱신 | 조회할 때마다 `/usage`를 읽어 서버 메모리에 저장한다. 읽지 못하면 마지막 저장값(실행 이벤트 포함)을 준다. 구독 로그인이 아니면 비운다 | 조회할 때마다 |
 
 - 두 값 모두 공식 CLI 출력이며 앱은 토큰을 읽지 않는다. 형식이 달라지면 오류 없이 `—`가 된다.
 - Codex는 `windowDurationMins`가 1440 이하면 5시간, 그보다 길면 주간 칸에 넣는다. 같은 칸에 둘이 오면 `primary`가 차지한다. 주간 한도만 있는 계정도 있다(primary 10080분, secondary 없음).

@@ -73,10 +73,14 @@ export function AgentUsage() {
     };
     void load();
     window.addEventListener(USAGE_REFRESH_EVENT, load);
-    const tick = setInterval(() => setNow(Date.now()), MIN); // 리셋 시각이 지난 창을 '—'로 바꾸려고 다시 계산한다
+    // 탭이 보이는 동안 1분마다 다시 읽고, 다른 탭에서 돌아오면 바로 읽는다. 남은 시간도 그때 다시 계산한다.
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    const tick = setInterval(() => { setNow(Date.now()); onVisible(); }, MIN);
     return () => {
       latest += 1; // 언마운트 뒤 도착하는 응답도 버린다
       window.removeEventListener(USAGE_REFRESH_EVENT, load);
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(tick);
     };
   }, []);

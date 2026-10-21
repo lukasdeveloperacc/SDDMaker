@@ -119,8 +119,12 @@ a:visited {
   letter-spacing: 0.125px;
 }
 
-/* 상단 바 */
+/* 상단 바: 스크롤해도 위에 붙어 있다. --nav-height는 MainNav가 실제 높이로 맞춘다. */
+html { scroll-padding-top: var(--nav-height, 64px); }
 .nav-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -590,7 +594,7 @@ a:visited {
 .project-heading h1 { margin: 0; overflow-wrap: anywhere; }
 .project-heading > .caption { max-width: 75ch; }
 .project-workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: var(--space-lg); align-items: start; }
-.project-sidebar { min-width: 0; position: sticky; top: var(--space-lg); max-height: calc(100vh - 48px); overflow-y: auto; }
+.project-sidebar { min-width: 0; position: sticky; top: calc(var(--nav-height, 64px) + var(--space-lg)); max-height: calc(100vh - var(--nav-height, 64px) - 48px); overflow-y: auto; }
 .project-panel { min-width: 0; min-height: 480px; padding: var(--space-xl); background: var(--color-surface); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); }
 .project-panel > .stack { gap: var(--space-lg); }
 .project-panel h2 { margin: 0; overflow-wrap: anywhere; }
