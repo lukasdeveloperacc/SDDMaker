@@ -2,7 +2,7 @@ import { isAgentName } from '@/lib/contract';
 import { kindOf, stripFence } from '@/server/doc-rules';
 import { getAdapter } from '@/server/agents';
 import { getDocument, updateDocument } from '@/server/db';
-import { generationPrompt, resolveDocRef, viewOf } from '@/server/documents';
+import { generationPrompt, resolveDocRef, runDirOf, viewOf } from '@/server/documents';
 import { apiError, gateError, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
 import { acquireRun } from '@/server/runtime';
@@ -39,8 +39,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
     handle,
     agent,
     execute: async ({ onDelta, signal }) => {
+      const dir = runDirOf(ref.projectId); // 클론이 없으면 프롬프트를 만들기 전에 멈춘다
       const prompt = generationPrompt(ref.projectId, ref.path, feedback);
-      const result = await getAdapter(agent).run({ prompt, signal, onDelta });
+      const result = await getAdapter(agent).run({ prompt, signal, onDelta, repoDir: dir });
       if (isScreen) return result.text;
 
       const text = stripFence(result.text);

@@ -8,6 +8,7 @@ export interface RunInput {
   onDelta?: (text: string) => void;
   signal: AbortSignal;
   timeoutMs?: number; // 기본 RUN_TIMEOUT_MS (테스트에서 줄인다)
+  repoDir?: string; // 저장소 프로젝트의 클론. 있으면 그 폴더에서 읽기 전용 도구로만 실행한다
 }
 export interface RunResult { text: string; sessionId: string }
 export interface LoginTerminalControls {

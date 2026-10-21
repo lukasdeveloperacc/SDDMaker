@@ -32,6 +32,20 @@ async function waitUntil(cond: () => boolean, ms = 10000) {
 }
 
 describe('GET /api/agents', () => {
+  it('GitHub 연결 상태를 github 항목으로 함께 준다 (gh가 없으면 설치 안 됨)', async () => {
+    process.env.FAKE_AUTH = 'logged_in';
+    const body = await (await GET()).json();
+    expect(body.github).toEqual({
+      installed: true,
+      loggedIn: true,
+      login: 'octo',
+      loginCommand: expect.stringContaining('gh auth login'),
+      loginRunning: false,
+    });
+    process.env.GH_CLI = '/nonexistent/gh';
+    expect((await (await GET()).json()).github).toMatchObject({ installed: false, loggedIn: false, login: null });
+  });
+
   it('로그인 중 상태는 CLI 상태 확인 성공과 실패 양쪽에서 제공한다', async () => {
     const controller = acquireLogin('codex')!;
     try {
@@ -95,6 +109,34 @@ describe('POST /api/agents/:agent/login 상태 확인 실패', () => {
     const res = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/claude/login'), ctx({ agent: 'claude' }));
     const events = await readSse(res);
     expect(events[events.length - 1]).toEqual({ event: 'done', data: { loggedIn: true } });
+  });
+});
+
+describe('POST /api/agents/github/login', () => {
+  it('URL·코드 안내를 보내고 로그인되면 done {loggedIn:true}', async () => {
+    process.env.FAKE_LOGIN = 'ok';
+    process.env.FAKE_AUTH = 'logged_in';
+    const res = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/github/login'), ctx({ agent: 'github' }));
+    const events = await readSse(res);
+    expect(events).toContainEqual({ event: 'prompt', data: { url: 'https://github.com/login/device', code: 'ABCD-1234' } });
+    expect(events[events.length - 1]).toEqual({ event: 'done', data: { loggedIn: true } });
+  });
+
+  it('GitHub 로그인이 진행 중이면 두 번째 요청은 409 login_running', async () => {
+    const gh = acquireLogin('github')!;
+    try {
+      const res = await POST(jsonReq('POST', 'http://127.0.0.1:3000/api/agents/github/login'), ctx({ agent: 'github' }));
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('login_running');
+    } finally {
+      releaseLogin('github', gh);
+    }
+  });
+
+  it('GitHub의 인증 코드 입력(PUT code)은 거절한다', async () => {
+    const { PUT } = await import('@/app/api/agents/[agent]/login/route');
+    const res = await PUT(jsonReq('PUT', 'http://127.0.0.1:3000/api/agents/github/login', { loginId: 'x', code: 'a#b' }), ctx({ agent: 'github' }));
+    expect(res.status).toBe(400);
   });
 });
 

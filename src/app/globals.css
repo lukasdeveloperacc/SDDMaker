@@ -525,6 +525,7 @@ a:visited {
   overflow-wrap: anywhere;
   font-size: 12px;
 }
+.login-terminal-header .btn { flex-shrink: 0; white-space: nowrap; }
 .agent-terminal {
   height: 320px;
   min-width: 0;

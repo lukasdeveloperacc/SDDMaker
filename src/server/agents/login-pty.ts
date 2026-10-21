@@ -1,12 +1,10 @@
 import { spawn } from 'node-pty';
-import type { AgentName } from '@/lib/contract';
 import { agentWorkdir, cliPath } from '../env';
 import { trackChild, untrackChild } from '../runtime';
-import { AgentError, childEnv } from './exec';
-import type { LoginInput } from './types';
+import { AgentError, childEnv, type CliName, type LoginRunInput } from './exec';
 
 // 로그인 명령 자체에 PTY를 연결한다. 셸이나 임의 명령은 실행하지 않는다.
-export function runPtyLogin(agent: AgentName, args: string[], input: LoginInput): Promise<void> {
+export function runPtyLogin(cli: CliName, args: string[], input: LoginRunInput): Promise<void> {
   return new Promise((resolve, reject) => {
     if (input.signal.aborted) {
       reject(new AgentError('login_failed', '로그인이 취소되었습니다'));
@@ -14,12 +12,12 @@ export function runPtyLogin(agent: AgentName, args: string[], input: LoginInput)
     }
     let terminal: ReturnType<typeof spawn>;
     try {
-      terminal = spawn(cliPath(agent), args, {
+      terminal = spawn(cliPath(cli), args, {
         name: 'xterm-256color',
         cols: 80,
         rows: 24,
         cwd: agentWorkdir(),
-        env: childEnv(agent),
+        env: childEnv(cli, input.envOverride),
       });
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;

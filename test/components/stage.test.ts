@@ -1,5 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { defaultStageKey, isInterviewDone } from '@/components/StageNav';
+import { StageNav, defaultStageKey, isInterviewDone } from '@/components/StageNav';
 import { interviewPhase } from '@/components/InterviewPanel';
 import type { DocumentView, Interview, ProjectDetail } from '@/lib/contract';
 
@@ -30,7 +32,7 @@ function iv(over: Partial<Interview>): Interview {
 
 function detail(interview: Interview | null, documents: DocumentView[]): ProjectDetail {
   return {
-    project: { id: 1, name: 'p', idea: 'i', designMd: null, createdAt: '' },
+    project: { id: 1, name: 'p', idea: 'i', designMd: null, createdAt: '', repo: null },
     interview,
     documents,
     running: null,
@@ -76,5 +78,25 @@ describe('interviewPhase', () => {
     expect(interviewPhase(iv({ status: 'summarized' }))).toBe('summary');
     expect(interviewPhase(iv({ status: 'approved' }))).toBe('approved');
     expect(interviewPhase(iv({ status: 'skipped' }))).toBe('skipped');
+  });
+});
+
+describe('StageNav 화면 정의서', () => {
+  const render = (repo: string | null) => {
+    const d = detail(iv({ status: 'approved' }), [doc('0-PRODUCT.md', { status: 'approved' }), doc('screens/a.md', { kind: 'screen', name: 'screens/a.md' })]);
+    d.project.repo = repo;
+    return renderToStaticMarkup(createElement(StageNav, { detail: d, selected: 'export', onSelect: () => {} }));
+  };
+
+  it('저장소 프로젝트는 데스크톱·모바일 모두 화면 정의서 그룹을 숨긴다', () => {
+    const html = render('octo/app');
+    expect(html).not.toContain('화면 정의서');
+    expect(html).not.toContain('screens/a.md');
+  });
+
+  it('저장소가 없는 프로젝트는 화면 정의서 그룹을 그대로 보여 준다', () => {
+    const html = render(null);
+    expect(html).toContain('화면 정의서');
+    expect(html).toContain('screens/a.md');
   });
 });

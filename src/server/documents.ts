@@ -1,4 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import {
+  BASELINE_DOC,
   DOC_PATH_RE,
   type DocumentView,
   type Interview,
@@ -15,6 +18,8 @@ import {
 } from '@/server/db';
 import { getRun } from '@/server/runtime';
 import { apiError, parseId } from '@/server/http';
+import { repoDir } from '@/server/env';
+import { AgentError, childEnv } from './agents/exec';
 import { buildDocumentPrompt } from './prompts';
 import {
   buildDocumentViews,
@@ -91,6 +96,24 @@ export function viewOf(ref: DocRef): DocumentView {
   return v;
 }
 
+// 저장소 프로젝트의 클론 폴더. 저장소가 없으면 undefined. 클론이 없으면 에이전트를 띄우기 전에 AgentError.
+export function runDirOf(projectId: number): string | undefined {
+  if (!getProject(projectId)?.repo) return undefined;
+  const dir = repoDir(projectId);
+  if (!existsSync(dir)) throw new AgentError('agent_failed', '저장소 클론이 없습니다. 프로젝트를 다시 만드세요');
+  return dir;
+}
+
+// 기준 문서에 적을 현재 커밋. 클론 폴더가 있다는 것은 runDirOf가 확인했다.
+function headCommit(projectId: number): string {
+  // shortcut: execFileSync blocks the server up to 15 s, switch to async if prompts become slow
+  return execFileSync('git', ['-C', repoDir(projectId), 'rev-parse', 'HEAD'], {
+    env: childEnv('git'),
+    timeout: 15_000,
+    encoding: 'utf8',
+  }).trim();
+}
+
 // 생성 프롬프트 조립. feedback이 있으면 현재 본문을 함께 넣는다.
 export function generationPrompt(projectId: number, path: string, feedback?: string): string {
   const project = getProject(projectId);
@@ -109,5 +132,8 @@ export function generationPrompt(projectId: number, path: string, feedback?: str
     screenFiles: screens,
     current,
     feedback,
+    ...(project.repo
+      ? { repo: { name: project.repo, baseline: path === BASELINE_DOC ? headCommit(projectId) : undefined } }
+      : {}),
   });
 }

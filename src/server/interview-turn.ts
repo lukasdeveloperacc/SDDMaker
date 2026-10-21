@@ -13,17 +13,19 @@ export async function runTurn(i: {
   rebuildPrompt?: () => string;
   onDelta?: (text: string) => void;
   signal: AbortSignal;
+  repoDir?: string; // 저장소 프로젝트의 클론
 }): Promise<RunResult> {
   const adapter = getAdapter(i.agent);
+  const repoDir = i.repoDir;
   if (!i.sessionId) {
-    return adapter.run({ prompt: i.prompt, sessionId: null, onDelta: i.onDelta, signal: i.signal });
+    return adapter.run({ prompt: i.prompt, sessionId: null, onDelta: i.onDelta, signal: i.signal, repoDir });
   }
   try {
-    return await adapter.run({ prompt: i.prompt, sessionId: i.sessionId, onDelta: i.onDelta, signal: i.signal });
+    return await adapter.run({ prompt: i.prompt, sessionId: i.sessionId, onDelta: i.onDelta, signal: i.signal, repoDir });
   } catch (e) {
     // 시간 초과는 다시 돌리지 않는다 (상한을 두 번 기다리게 된다).
     if (!(e instanceof AgentError) || e instanceof RunTimeoutError || e.code !== 'agent_failed' || i.signal.aborted || !i.rebuildPrompt) throw e;
-    return adapter.run({ prompt: i.rebuildPrompt(), sessionId: null, onDelta: i.onDelta, signal: i.signal });
+    return adapter.run({ prompt: i.rebuildPrompt(), sessionId: null, onDelta: i.onDelta, signal: i.signal, repoDir });
   }
 }
 

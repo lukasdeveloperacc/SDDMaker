@@ -23,7 +23,7 @@ projects 1 ── *    documents   (문서 경로마다 하나)
 | `name` | 프로젝트 이름 |
 | `idea` | 사용자가 처음 입력한 앱 아이디어 |
 | `design_md` | 사용자가 넣은 디자인 문서 (없으면 NULL). 생성 입력과 `2-DESIGN.md` 내보내기에 그대로 쓴다 |
-| `repo` | (예정) GitHub 저장소 `owner/repo` (없으면 NULL). 클론 폴더는 `<데이터 폴더>/repos/<id>`로 정해져 저장하지 않는다 ([requirements/github.md](requirements/github.md)) |
+| `repo` | GitHub 저장소 `owner/repo` (없으면 NULL). 기존 DB는 열 때 `ALTER TABLE`로 열을 추가한다. 클론 폴더는 `<데이터 폴더>/repos/<id>`로 정해져 저장하지 않는다 ([requirements/github.md](requirements/github.md)) |
 | `created_at` | 생성 시각 |
 
 ### `interviews`
@@ -55,7 +55,7 @@ projects 1 ── *    documents   (문서 경로마다 하나)
 | --- | --- |
 | `id` | 기본 키 |
 | `project_id` | `projects.id` 참조 |
-| `path` | 내보낼 때의 `docs/` 아래 경로 (예: `0-PRODUCT.md`, `requirements/project.md`, `screens/home.html`, `changes/001-mvp.md`) |
+| `path` | 내보낼 때의 `docs/` 아래 경로 (예: `0-PRODUCT.md`, `requirements/project.md`, `screens/home.html`, `changes/001-mvp.md`; 저장소 프로젝트는 `changes/001-baseline.md`, [github.md](requirements/github.md#저장소-프로젝트의-생성)) |
 | `content` | 현재 본문. 화면 정의서는 HTML, 나머지는 마크다운 |
 | `previous_content` | 마지막 생성·재생성 직전 본문. 되돌리기에 1개만 보관 |
 | `status` | `empty` \| `draft` \| `approved` |
@@ -63,7 +63,7 @@ projects 1 ── *    documents   (문서 경로마다 하나)
 | `agent` | 마지막으로 생성한 에이전트 (직접 쓴 문서는 NULL) |
 | `updated_at` | 마지막 변경 시각 |
 
-- 프로젝트 생성 시 기본 행 5개 — 기본 문서 4개와 변경 기록(`0-PRODUCT.md`, `1-SYSTEM-ARCHITECTURE.md`, `3-DATABASE.md`, `4-USERFLOW.md`, `changes/001-mvp.md`)를 `empty`로 만든다.
+- 프로젝트 생성 시 기본 행 5개 — 기본 문서 4개와 변경 기록(`0-PRODUCT.md`, `1-SYSTEM-ARCHITECTURE.md`, `3-DATABASE.md`, `4-USERFLOW.md`, `changes/001-mvp.md`)를 `empty`로 만든다. 저장소 프로젝트는 `001-mvp.md` 대신 `changes/001-baseline.md`다 ([github.md](requirements/github.md#저장소-프로젝트의-생성)).
 - `requirements/<기능>.md` 행은 `0-PRODUCT.md`를, `screens/<화면>.html` 행은 `4-USERFLOW.md`를 승인할 때 만든다 ([목록 확정](requirements/documents.md#목록-확정)).
 - "목록에서 빠짐"은 저장하지 않는다. 승인된 `0-PRODUCT.md`·`4-USERFLOW.md`의 링크와 비교해 계산한다.
 - 생성 순서는 DB에 두지 않고 경로로 코드에서 정한다.

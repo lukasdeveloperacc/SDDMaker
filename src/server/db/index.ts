@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import {
   BASE_DOCS,
+  BASELINE_DOC,
   CHANGE_DOC,
   type AgentName,
   type DocumentRecord,
@@ -28,6 +29,10 @@ export function getDb(): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA_SQL);
+  // 기존 DB에는 repo 열이 없을 수 있다 (CREATE TABLE IF NOT EXISTS는 기존 표를 바꾸지 않는다).
+  if (!(db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).some((c) => c.name === 'repo')) {
+    db.exec('ALTER TABLE projects ADD COLUMN repo TEXT');
+  }
   globalThis.__sddmakerDb = { file, db };
   return db;
 }
@@ -40,10 +45,10 @@ export function tx<T>(fn: () => T): T {
 const now = () => new Date().toISOString();
 
 interface ProjectRow {
-  id: number; name: string; idea: string; design_md: string | null; created_at: string;
+  id: number; name: string; idea: string; design_md: string | null; created_at: string; repo: string | null;
 }
 function toProject(r: ProjectRow): Project {
-  return { id: r.id, name: r.name, idea: r.idea, designMd: r.design_md, createdAt: r.created_at };
+  return { id: r.id, name: r.name, idea: r.idea, designMd: r.design_md, createdAt: r.created_at, repo: r.repo };
 }
 
 interface InterviewRow {
@@ -73,13 +78,13 @@ function toDocument(r: DocumentRow): DocumentRecord {
   };
 }
 
-export function createProject(i: { name: string; idea: string; designMd: string | null }): Project {
+export function createProject(i: { name: string; idea: string; designMd: string | null; repo?: string | null }): Project {
   return tx(() => {
     const info = getDb()
-      .prepare('INSERT INTO projects (name, idea, design_md, created_at) VALUES (?, ?, ?, ?)')
-      .run(i.name, i.idea, i.designMd, now());
+      .prepare('INSERT INTO projects (name, idea, design_md, created_at, repo) VALUES (?, ?, ?, ?, ?)')
+      .run(i.name, i.idea, i.designMd, now(), i.repo ?? null);
     const id = Number(info.lastInsertRowid);
-    insertEmptyDocuments(id, [...BASE_DOCS, CHANGE_DOC]);
+    insertEmptyDocuments(id, [...BASE_DOCS, i.repo ? BASELINE_DOC : CHANGE_DOC]);
     return getProject(id) as Project;
   });
 }

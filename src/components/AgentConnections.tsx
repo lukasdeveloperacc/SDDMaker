@@ -1,19 +1,30 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { AGENT_NAMES, type AgentName, type AgentStatus, type AgentsResponse } from '@/lib/contract';
+import { LOGIN_TARGETS, type AgentStatus, type AgentsResponse, type GithubStatus, type LoginTarget } from '@/lib/contract';
 import { api } from '@/lib/api';
 import { readSse } from '@/lib/sse-client';
 import { agentErrorHelp, isAgentErrorCode, type AgentErrorHelp } from '@/lib/agent-errors';
 import { USAGE_REFRESH_EVENT } from '@/lib/use-agent-run';
 import { Badge, Button, Notice } from '@/components/ui';
-import { LoginConsole } from '@/components/LoginConsole';
+import { LoginConsole, LOGIN_LABEL } from '@/components/LoginConsole';
 
-const LABEL: Record<AgentName, string> = { claude: 'Claude Code', codex: 'Codex' };
+const HELP_URL: Record<LoginTarget, string> = {
+  claude: 'https://code.claude.com/docs/en/authentication',
+  codex: 'https://learn.chatgpt.com/docs/auth#preferred-device-code-authentication-beta',
+  github: 'https://cli.github.com/manual/gh_auth_login',
+};
+const GH_NOT_FOUND_HELP: AgentErrorHelp = {
+  title: 'GitHub CLI(gh)를 찾지 못했습니다',
+  body: 'gh 설치 후 GH_CLI로 경로를 지정할 수 있습니다.',
+  action: 'none',
+};
+
+type LoginStatus = AgentStatus | GithubStatus;
 
 interface LoginState {
   attempt: number;
-  agent: AgentName;
+  agent: LoginTarget;
   running: boolean;
   prompt: { url: string; code?: string } | null;
   output: string;
@@ -22,15 +33,20 @@ interface LoginState {
   error: { message: string; help: AgentErrorHelp } | null;
 }
 
-function statusBadge(s: AgentStatus) {
+function statusBadge(s: LoginStatus) {
   if (!s.installed) return <Badge tone="neutral">미설치</Badge>;
   if (!s.loggedIn) return <Badge tone="warn">미로그인</Badge>;
+  if (!('subscription' in s)) return <Badge tone="success">로그인됨{s.login ? ` · ${s.login}` : ''}</Badge>;
   if (!s.subscription) return <Badge tone="warn">구독 아닌 로그인</Badge>;
   return <Badge tone="success">로그인됨</Badge>;
 }
 
-function needsLogin(s: AgentStatus) {
-  return s.installed && !(s.loggedIn && s.subscription);
+function connected(s: LoginStatus) {
+  return s.loggedIn && (!('subscription' in s) || s.subscription);
+}
+
+function needsLogin(s: LoginStatus) {
+  return s.installed && !connected(s);
 }
 
 export function AgentConnections() {
@@ -43,8 +59,8 @@ export function AgentConnections() {
   const [agents, setAgents] = useState<AgentsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [login, setLogin] = useState<LoginState | null>(null);
-  const [cancelling, setCancelling] = useState<AgentName | null>(null);
-  const [disconnecting, setDisconnecting] = useState<AgentName | null>(null);
+  const [cancelling, setCancelling] = useState<LoginTarget | null>(null);
+  const [disconnecting, setDisconnecting] = useState<LoginTarget | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const attemptRef = useRef(0);
 
@@ -64,7 +80,7 @@ export function AgentConnections() {
   // 언마운트되면 로그인 스트림을 끊는다 (서버가 로그인 프로세스를 끝낸다).
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  async function startLogin(agent: AgentName) {
+  async function startLogin(agent: LoginTarget) {
     if (abortRef.current) return;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -73,9 +89,9 @@ export function AgentConnections() {
     setCopied(false);
     setInputError(null);
     setLogin({ attempt: ++attemptRef.current, agent, running: true, prompt: null, output: '', outputLength: 0, loginId: null, error: null });
-    const status = agents?.[agent];
+    const status = agent === 'github' ? undefined : agents?.[agent];
     const fail = (message: string, code: 'login_failed' | 'cli_not_found' = 'login_failed') =>
-      setLogin((prev) => prev ? { ...prev, running: false, prompt: null, loginId: null, error: { message, help: agentErrorHelp(code, status) } } : prev);
+      setLogin((prev) => prev ? { ...prev, running: false, prompt: null, loginId: null, error: { message, help: agent === 'github' && code === 'cli_not_found' ? GH_NOT_FOUND_HELP : agentErrorHelp(code, status) } } : prev);
 
     try {
       const res = await fetch(`/api/agents/${agent}/login`, {
@@ -125,7 +141,7 @@ export function AgentConnections() {
         fail('로그인이 완료되지 않았습니다.');
       } else {
         setLogin(null);
-        window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
+        if (agent !== 'github') window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
       }
     } catch {
       if (!controller.signal.aborted && abortRef.current === controller) {
@@ -137,7 +153,7 @@ export function AgentConnections() {
     }
   }
 
-  async function cancelLogin(agent: AgentName) {
+  async function cancelLogin(agent: LoginTarget) {
     const controller = abortRef.current;
     setCancelling(agent);
     setLoadError(null);
@@ -158,16 +174,16 @@ export function AgentConnections() {
     }
   }
 
-  async function restartLogin(agent: AgentName) {
+  async function restartLogin(agent: LoginTarget) {
     if (await cancelLogin(agent)) await startLogin(agent);
   }
 
-  async function disconnect(agent: AgentName) {
+  async function disconnect(agent: LoginTarget) {
     setDisconnecting(agent);
     setLoadError(null);
     try {
       await api('POST', `/api/agents/${agent}/logout`);
-      window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
+      if (agent !== 'github') window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
       setLogin((prev) => prev?.agent === agent ? null : prev);
       setCode('');
       setInputError(null);
@@ -235,8 +251,9 @@ export function AgentConnections() {
       </div>
       <div role="tabpanel" id={`${groupName}-panel`} aria-labelledby={`${groupName}-${mode}-tab`}>
         {loadError && <Notice tone="error">{loadError}</Notice>}
-        {AGENT_NAMES.map((a) => {
+        {LOGIN_TARGETS.map((a) => {
           const s = agents?.[a];
+          if (a === 'github' && !s) return null; // 응답에 github가 없으면 행을 만들지 않는다
           const showLogin = s !== undefined && needsLogin(s);
           const loginHere = login?.agent === a ? login : null;
           const elsewhere = s?.loginRunning && !loginHere?.running;
@@ -252,20 +269,20 @@ export function AgentConnections() {
               <div className="connection-heading">
                 <div className="connection-identity">
                   <span className="connection-mark" data-agent={a} aria-hidden="true">
-                    {a === 'claude' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2v20M2 12h20M5 5l14 14M5 19 19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18" /></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m8 5-6 7 6 7m8-14 6 7-6 7M14 3l-4 18" /></svg>}
+                    {a === 'claude' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2v20M2 12h20M5 5l14 14M5 19 19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18" /></svg> : a === 'codex' ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m8 5-6 7 6 7m8-14 6 7-6 7M14 3l-4 18" /></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10M18 9c0 4-6 4-12 8" /></svg>}
                   </span>
-                  <span className="connection-name">{LABEL[a]}</span>
+                  <span className="connection-name">{LOGIN_LABEL[a]}</span>
                   <span className="agent-help">
-                    <a href={a === 'codex' ? 'https://learn.chatgpt.com/docs/auth#preferred-device-code-authentication-beta' : 'https://code.claude.com/docs/en/authentication'} target="_blank" rel="noopener noreferrer" aria-label={`${LABEL[a]} 로그인 도움말`} aria-describedby={`${groupName}-${a}-help`}>
+                    <a href={HELP_URL[a]} target="_blank" rel="noopener noreferrer" aria-label={`${LOGIN_LABEL[a]} 로그인 도움말`} aria-describedby={`${groupName}-${a}-help`}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16v1" /></svg>
                     </a>
-                    <span role="tooltip" id={`${groupName}-${a}-help`}>{a === 'codex' ? '기기 로그인이 막히면 ChatGPT 설정 → 보안에서 허용하세요.' : mode === 'terminal' ? '브라우저에서 받은 인증 코드를 터미널에 붙여넣으세요.' : '브라우저에서 받은 인증 코드를 아래에 붙여넣으세요.'}</span>
+                    <span role="tooltip" id={`${groupName}-${a}-help`}>{a === 'github' ? 'GitHub 페이지에서 기기 코드를 입력하세요.' : a === 'codex' ? '기기 로그인이 막히면 ChatGPT 설정 → 보안에서 허용하세요.' : mode === 'terminal' ? '브라우저에서 받은 인증 코드를 터미널에 붙여넣으세요.' : '브라우저에서 받은 인증 코드를 아래에 붙여넣으세요.'}</span>
                   </span>
                 </div>
                 <div className="connection-actions">
                   {s ? statusBadge(s) : <Badge tone="neutral">확인 중</Badge>}
                   {s?.loggedIn && !elsewhere && !loginHere?.running && (
-                    <Button variant="utility" disabled={busy} aria-label={`${LABEL[a]} 연결 해제`}
+                    <Button variant="utility" disabled={busy} aria-label={`${LOGIN_LABEL[a]} 연결 해제`}
                       title="SDDMaker에 저장된 로그인만 해제합니다." onClick={() => void disconnect(a)}>
                       {disconnecting === a ? '해제 중…' : '연결 해제'}
                     </Button>
@@ -276,6 +293,7 @@ export function AgentConnections() {
                   {elsewhere && <Button variant="utility" disabled={busy} onClick={() => void restartLogin(a)}>{cancelling === a ? '종료 중…' : '연결 재시작'}</Button>}
                 </div>
               </div>
+              {a === 'github' && s && !s.installed && <p className="caption">gh 설치 후 GH_CLI로 경로를 지정할 수 있습니다.</p>}
               {elsewhere && <p className="caption">로그인 진행 중</p>}
               {loginHere && (
                 <div className="connection-flow">
@@ -288,7 +306,7 @@ export function AgentConnections() {
                         {authUrl ? <a className="btn btn-primary" href={authUrl} target="_blank" rel="noopener noreferrer">인증 페이지 열기</a> : <span className="caption" role="status">로그인 준비 중…</span>}
                         {authUrl && <span className="caption" role="status">인증 대기 중</span>}
                       </div>
-                      {a === 'codex' && loginHere.prompt?.code && (
+                      {a !== 'claude' && loginHere.prompt?.code && (
                         <div className="connection-code"><code>{loginHere.prompt.code}</code><Button variant="utility" onClick={() => void copyCode(loginHere.prompt!.code!)}>{copied ? '복사됨' : '코드 복사'}</Button></div>
                       )}
                       {a === 'claude' && authUrl && (

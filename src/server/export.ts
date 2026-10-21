@@ -9,16 +9,26 @@ export function exportFileName(projectName: string): { ascii: string; encoded: s
   return { ascii, encoded };
 }
 
+// 내보내는 파일 목록 (zip과 PR이 같이 쓴다). 경로는 저장소 기준 'docs/…'.
 // docs/AGENTS.md = 규칙 원문, docs/2-DESIGN.md = 디자인 문서(있을 때만), docs/<path> = 승인된 본문.
+export function exportFiles(i: {
+  designMd: string | null;
+  docs: { path: string; content: string }[];
+  rules: string;
+}): { path: string; content: string }[] {
+  const files = [{ path: 'docs/AGENTS.md', content: i.rules }];
+  if (i.designMd !== null && i.designMd.trim() !== '') files.push({ path: 'docs/2-DESIGN.md', content: i.designMd });
+  for (const d of i.docs) files.push({ path: `docs/${d.path}`, content: d.content });
+  return files;
+}
+
 export async function buildExportZip(i: {
   designMd: string | null;
   docs: { path: string; content: string }[];
   rules: string;
 }): Promise<ArrayBuffer> {
   const zip = new JSZip();
-  const root = zip.folder('docs') as JSZip;
-  root.file('AGENTS.md', i.rules);
-  if (i.designMd !== null && i.designMd.trim() !== '') root.file('2-DESIGN.md', i.designMd);
-  for (const d of i.docs) root.file(d.path, d.content);
+  zip.folder('docs');
+  for (const f of exportFiles(i)) zip.file(f.path, f.content);
   return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
 }

@@ -1,5 +1,7 @@
+import { rmSync } from 'node:fs';
 import { cancelRun, getRun } from '@/server/runtime';
 import { deleteProject, getProject } from '@/server/db';
+import { repoDir } from '@/server/env';
 import { projectDetail } from '@/server/documents';
 import { apiError, json, parseId } from '@/server/http';
 
@@ -20,5 +22,6 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   await cancelRun(id);
   if (getRun(id) !== null) return apiError(409, 'busy', '실행이 끝난 뒤 삭제할 수 있습니다');
   deleteProject(id);
+  rmSync(repoDir(id), { recursive: true, force: true });
   return new Response(null, { status: 204 });
 }

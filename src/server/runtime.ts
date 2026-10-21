@@ -1,4 +1,4 @@
-import type { AgentName, RunKind } from '@/lib/contract';
+import type { LoginTarget, RunKind } from '@/lib/contract';
 import { randomUUID } from 'node:crypto';
 
 interface RunEntry {
@@ -20,7 +20,7 @@ interface LoginEntry {
 
 interface RuntimeState {
   runs: Map<number, RunEntry>;
-  logins: Map<AgentName, LoginEntry>;
+  logins: Map<LoginTarget, LoginEntry>;
 }
 
 // 개발 서버가 모듈을 다시 읽어도 실행 잠금과 자식 목록이 사라지지 않게 globalThis에 둔다.
@@ -74,7 +74,7 @@ export async function cancelRun(projectId: number, waitMs = 5000): Promise<void>
   clearTimeout(timer);
 }
 
-export function acquireLogin(agent: AgentName): AbortController | null {
+export function acquireLogin(agent: LoginTarget): AbortController | null {
   if (state.logins.has(agent)) return null;
   const controller = new AbortController();
   let markReleased!: () => void;
@@ -83,19 +83,19 @@ export function acquireLogin(agent: AgentName): AbortController | null {
   return controller;
 }
 
-export function releaseLogin(agent: AgentName, controller: AbortController): void {
+export function releaseLogin(agent: LoginTarget, controller: AbortController): void {
   const entry = state.logins.get(agent);
   if (entry?.controller !== controller) return;
   state.logins.delete(agent);
   entry.markReleased();
 }
 
-export function isLoginRunning(agent: AgentName): boolean {
+export function isLoginRunning(agent: LoginTarget): boolean {
   return state.logins.has(agent);
 }
 
 // 204를 받은 화면이 즉시 새 로그인을 시작할 수 있도록 자식 종료와 잠금 해제를 기다린다.
-export async function cancelLogin(agent: AgentName, waitMs = 5000): Promise<boolean> {
+export async function cancelLogin(agent: LoginTarget, waitMs = 5000): Promise<boolean> {
   const entry = state.logins.get(agent);
   if (!entry) return true;
   entry.controller.abort();
@@ -110,14 +110,14 @@ export async function cancelLogin(agent: AgentName, waitMs = 5000): Promise<bool
   }
 }
 
-export function setLoginCodeInput(agent: AgentName, controller: AbortController, submit: (text: string, close?: boolean) => boolean): string | null {
+export function setLoginCodeInput(agent: LoginTarget, controller: AbortController, submit: (text: string, close?: boolean) => boolean): string | null {
   const entry = state.logins.get(agent);
   if (!entry || entry.controller !== controller || controller.signal.aborted) return null;
   entry.submit = submit;
   return entry.id;
 }
 
-export function submitLoginCode(agent: AgentName, id: string, code: string): boolean {
+export function submitLoginCode(agent: LoginTarget, id: string, code: string): boolean {
   const entry = state.logins.get(agent);
   if (!entry || entry.id !== id || entry.controller.signal.aborted || !entry.submit) return false;
   if (!entry.submit(code)) return false;
@@ -126,20 +126,20 @@ export function submitLoginCode(agent: AgentName, id: string, code: string): boo
   return true;
 }
 
-export function writeLoginInput(agent: AgentName, id: string, input: string): boolean {
+export function writeLoginInput(agent: LoginTarget, id: string, input: string): boolean {
   const entry = state.logins.get(agent);
   if (!entry || entry.id !== id || entry.controller.signal.aborted || !entry.submit) return false;
   return entry.submit(input, false);
 }
 
-export function setLoginTerminal(agent: AgentName, controller: AbortController, terminal: NonNullable<LoginEntry['terminal']>): string | null {
+export function setLoginTerminal(agent: LoginTarget, controller: AbortController, terminal: NonNullable<LoginEntry['terminal']>): string | null {
   const entry = state.logins.get(agent);
   if (!entry || entry.controller !== controller || controller.signal.aborted) return null;
   entry.terminal = terminal;
   return entry.id;
 }
 
-export function loginTerminal(agent: AgentName, id: string): LoginEntry['terminal'] {
+export function loginTerminal(agent: LoginTarget, id: string): LoginEntry['terminal'] {
   const entry = state.logins.get(agent);
   return entry?.id === id && !entry.controller.signal.aborted ? entry.terminal : undefined;
 }

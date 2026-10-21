@@ -117,6 +117,18 @@ export default function Page() {
           ← 프로젝트 목록
         </Link>
         <h1 className="h2">{detail.project.name}</h1>
+        {detail.project.repo && (
+          <a
+            className="caption"
+            href={`https://github.com/${detail.project.repo}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`${detail.project.repo} GitHub 저장소 (새 탭에서 열림)`}
+            style={{ overflowWrap: 'anywhere', justifySelf: 'start' }}
+          >
+            {detail.project.repo}
+          </a>
+        )}
         <p className="caption" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
           {detail.project.idea}
         </p>

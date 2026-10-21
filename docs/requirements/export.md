@@ -25,7 +25,8 @@ docs/
 ```
 
 - 파일 이름: `<프로젝트 이름>-docs.zip`
-- (예정) 저장소 프로젝트는 같은 파일 구성을 저장소에 PR로 올릴 수도 있다 ([github.md](github.md#pr-올리기)).
+- 저장소 프로젝트는 `changes/001-mvp.md` 대신 `changes/001-baseline.md`를 담는다 ([github.md](github.md#저장소-프로젝트의-생성)).
+- 저장소 프로젝트는 같은 파일 구성을 저장소에 PR로 올릴 수도 있다 ([github.md](github.md#pr-올리기)).
 
 ## 규칙
 

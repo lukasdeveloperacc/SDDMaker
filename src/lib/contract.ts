@@ -5,7 +5,9 @@ export type InterviewStatus = 'active' | 'summarized' | 'approved' | 'skipped';
 export type DocStatus = 'empty' | 'draft' | 'approved';
 export type MessageRole = 'agent' | 'user';
 export type DocKind = 'base' | 'requirement' | 'screen' | 'change';
-export type RunKind = 'interview' | 'document' | 'annotations';
+export type RunKind = 'interview' | 'document' | 'annotations' | 'pr';
+export const LOGIN_TARGETS = ['claude', 'codex', 'github'] as const;
+export type LoginTarget = (typeof LOGIN_TARGETS)[number];
 
 export type AgentErrorCode = 'cli_not_found' | 'not_logged_in' | 'not_subscription' | 'login_failed' | 'agent_failed';
 export type HttpErrorCode =
@@ -21,12 +23,18 @@ export type HttpErrorCode =
   | 'invalid_state'    // 409 그 상태에서 할 수 없는 전이
   | 'nothing_to_undo'  // 409
   | 'invalid_links'    // 409 items = 규칙 위반 링크 이름 (0-PRODUCT 링크 없음 포함)
-  | 'export_blocked';  // 409 items = 승인 안 됨·목록에서 빠짐 문서 경로
+  | 'export_blocked'   // 409 items = 승인 안 됨·목록에서 빠짐 문서 경로
+  | 'gh_not_found'     // 409 GitHub CLI(gh) 없음
+  | 'github_not_connected' // 409 GitHub 로그인 안 됨
+  | 'repo_not_found'   // 404 GitHub 저장소를 찾을 수 없음
+  | 'clone_failed'     // 502 저장소 복제 실패(시간 초과 포함)
+  | 'no_push_permission' // 409 저장소에 푸시 권한 없음
+  | 'pr_failed';       // 502 푸시·PR 생성 실패, 시간 초과, 비밀값 검출, 같은 분 브랜치 충돌
 export interface ApiError { code: HttpErrorCode; message: string; items?: string[] }
 
 export type Gate = { ok: true } | { ok: false; code: HttpErrorCode; reason: string; items?: string[] };
 
-export interface Project { id: number; name: string; idea: string; designMd: string | null; createdAt: string }
+export interface Project { id: number; name: string; idea: string; designMd: string | null; createdAt: string; repo: string | null } // repo: 'owner/repo'
 export interface ProjectSummary {
   id: number; name: string; createdAt: string;
   interviewStatus: InterviewStatus | null;
@@ -62,7 +70,8 @@ export interface ProjectDetail {
   exportGate: { ok: boolean; blocking: string[]; upstreamChanged: string[] };
 }
 export interface AgentStatus { installed: boolean; loggedIn: boolean; subscription: boolean; loginCommand: string; loginRunning?: boolean }
-export type AgentsResponse = Record<AgentName, AgentStatus>;
+export interface GithubStatus { installed: boolean; loggedIn: boolean; login: string | null; loginCommand: string; loginRunning?: boolean }
+export type AgentsResponse = Record<AgentName, AgentStatus> & { github: GithubStatus };
 export interface UsageWindow { usedPercent: number; resetsAt: string } // usedPercent 0..100 정수, resetsAt ISO 8601
 export interface AgentUsage { fiveHour: UsageWindow | null; weekly: UsageWindow | null; readAt: string | null } // readAt ISO
 export type UsageResponse = Record<AgentName, AgentUsage | null>; // null = 구독 로그인이 아님 → 숨김
@@ -90,6 +99,8 @@ export interface DocumentResponse { document: DocumentView }
 export interface ApproveResponse { document: DocumentView; requirements?: string[]; screens?: string[] }
 export interface UnapproveResponse { document: DocumentView; flagged: string[] }
 export interface PromptPreviewResponse { prompt: string }
+export interface PrInfoResponse { repo: string; defaultBranch: string; canPush: boolean; files: string[]; overwrites: string[] } // files: 'docs/…'
+export interface PrCreateResponse { url: string }
 
 // 서버 내부 레코드 (DB 모듈이 camelCase로 돌려줌). Frontend는 쓰지 않는다.
 export interface InterviewRecord {
@@ -104,9 +115,11 @@ export interface DocumentRecord {
 export const NAME_RE = /^[a-z0-9-]+$/;
 export const BASE_DOCS = ['0-PRODUCT.md', '1-SYSTEM-ARCHITECTURE.md', '3-DATABASE.md', '4-USERFLOW.md'] as const;
 export const CHANGE_DOC = 'changes/001-mvp.md';
+export const BASELINE_DOC = 'changes/001-baseline.md'; // 저장소 프로젝트의 변경 문서
 export const DOC_PATH_RE =
-  /^(0-PRODUCT\.md|1-SYSTEM-ARCHITECTURE\.md|3-DATABASE\.md|4-USERFLOW\.md|changes\/001-mvp\.md|requirements\/[a-z0-9-]+\.md|screens\/[a-z0-9-]+\.html)$/;
+  /^(0-PRODUCT\.md|1-SYSTEM-ARCHITECTURE\.md|3-DATABASE\.md|4-USERFLOW\.md|changes\/001-mvp\.md|changes\/001-baseline\.md|requirements\/[a-z0-9-]+\.md|screens\/[a-z0-9-]+\.html)$/;
 export function isAgentName(v: unknown): v is AgentName { return v === 'claude' || v === 'codex'; }
+export function isLoginTarget(v: unknown): v is LoginTarget { return (LOGIN_TARGETS as readonly unknown[]).includes(v); }
 export function docApiPath(projectId: number, path: string, action?: string): string {
   return `/api/projects/${projectId}/documents/${encodeURIComponent(path)}${action ? `/${action}` : ''}`;
 }

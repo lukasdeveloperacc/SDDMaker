@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAdapter, ensureReady, agentStatuses, AgentError } from '@/server/agents';
+import { getAdapter, ensureReady, AgentError } from '@/server/agents';
 import { claudeAdapter } from '@/server/agents/claude';
 import { codexAdapter } from '@/server/agents/codex';
-import { RUN_TIMEOUT_MS, RunTimeoutError } from '@/server/agents/exec';
-import { agentWorkdir, claudeHome, codexHome, dataDir } from '@/server/env';
+import { RUN_TIMEOUT_MS, RunTimeoutError, childEnv } from '@/server/agents/exec';
+import { agentWorkdir, claudeHome, dataDir, ghHome } from '@/server/env';
 
 const signal = () => new AbortController().signal;
 
@@ -203,12 +203,28 @@ describe('상태 확인', () => {
     expect((await errorOf(ensureReady('claude'))).code).toBe('cli_not_found');
   });
 
-  it('agentStatuses는 두 CLI의 상태와 로그인 안내를 함께 준다', async () => {
-    process.env.FAKE_AUTH = 'logged_in';
-    const s = await agentStatuses();
-    expect(s.claude).toEqual({ installed: true, loggedIn: true, subscription: true, loginCommand: `CLAUDE_CONFIG_DIR='${claudeHome()}' claude auth login --claudeai` });
-    expect(s.codex.loginCommand).toBe(`CODEX_HOME='${codexHome()}' codex login --device-auth`);
-    expect(s.codex.subscription).toBe(true);
+  it('childEnv는 에이전트 환경과 GitHub 환경을 서로 나눈다', () => {
+    vi.stubEnv('GH_TOKEN', 'secret');
+    vi.stubEnv('GH_CONFIG_DIR', '/leak');
+    vi.stubEnv('CODEX_HOME', '/leak-codex');
+    try {
+      const claude = childEnv('claude');
+      expect(claude.CLAUDE_CONFIG_DIR).toBe(claudeHome());
+      expect(claude).not.toHaveProperty('GH_CONFIG_DIR');
+      expect(claude).not.toHaveProperty('GIT_CONFIG_GLOBAL');
+
+      const gh = childEnv('github');
+      expect(gh.GH_CONFIG_DIR).toBe(ghHome());
+      expect(gh.GIT_CONFIG_GLOBAL).toBe(path.join(ghHome(), 'gitconfig'));
+      expect(gh.GH_PROMPT_DISABLED).toBe('1');
+      expect(gh).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+      expect(gh).not.toHaveProperty('CODEX_HOME');
+      expect(gh).not.toHaveProperty('GH_TOKEN');
+
+      expect(childEnv('github', { GH_PROMPT_DISABLED: undefined })).not.toHaveProperty('GH_PROMPT_DISABLED');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('getAdapter가 이름에 맞는 어댑터를 준다', () => {

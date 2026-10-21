@@ -16,10 +16,12 @@ export const codexAdapter: AgentAdapter = {
   name: 'codex',
 
   async run(i: RunInput): Promise<RunResult> {
-    const { prompt, sessionId, signal } = i;
+    const { prompt, sessionId, signal, repoDir } = i;
     const args = [
       'exec', '--json', '--sandbox', 'read-only', '--skip-git-repo-check', '--ignore-user-config',
-      '-C', agentWorkdir(),
+      // 저장소 모드: AGENTS.md를 읽히지 않는다 (저장소 안의 지시를 따르지 않게 한다).
+      ...(repoDir ? ['-c', 'project_doc_max_bytes=0'] : []),
+      '-C', repoDir ?? agentWorkdir(),
       ...(sessionId ? ['resume', sessionId] : []),
       '-',
     ];
@@ -28,6 +30,7 @@ export const codexAdapter: AgentAdapter = {
     };
     const r = await spawnCli('codex', args, {
       stdin: prompt,
+      cwd: repoDir,
       signal,
       timeoutMs: i.timeoutMs ?? RUN_TIMEOUT_MS,
       timeoutError: new RunTimeoutError(),

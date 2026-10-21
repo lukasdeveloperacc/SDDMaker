@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Terminal } from '@xterm/xterm';
-import type { AgentName } from '@/lib/contract';
+import type { LoginTarget } from '@/lib/contract';
 import { api } from '@/lib/api';
 
+const LABEL: Record<LoginTarget, string> = { claude: 'Claude Code', codex: 'Codex', github: 'GitHub' };
+
 export function AgentTerminal({ agent, loginId, output, outputLength, running }: {
-  agent: AgentName; loginId: string | null; output: string; outputLength: number; running: boolean;
+  agent: LoginTarget; loginId: string | null; output: string; outputLength: number; running: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
@@ -81,7 +83,7 @@ export function AgentTerminal({ agent, loginId, output, outputLength, running }:
   }, [running, loginId]);
 
   return <>
-    <div ref={host} className="agent-terminal" role="group" aria-label={`${agent === 'claude' ? 'Claude Code' : 'Codex'} 로그인 터미널`} />
+    <div ref={host} className="agent-terminal" role="group" aria-label={`${LABEL[agent]} 로그인 터미널`} />
     {error && <p role="alert">{error}</p>}
   </>;
 }

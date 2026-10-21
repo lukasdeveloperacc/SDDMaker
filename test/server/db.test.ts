@@ -1,7 +1,9 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { BASE_DOCS, CHANGE_DOC } from '@/lib/contract';
+import { BASE_DOCS, BASELINE_DOC, CHANGE_DOC } from '@/lib/contract';
 import {
   addMessage,
   createInterview,
@@ -38,6 +40,42 @@ describe('DB 모듈', () => {
     const docs = listDocuments(p.id);
     expect(docs.map((d) => d.path).sort()).toEqual(EXPECTED_PATHS);
     expect(docs.every((d) => d.status === 'empty' && d.content === '' && !d.upstreamChanged)).toBe(true);
+  });
+
+  it('repo가 있으면 기준 문서와 changes/001-baseline.md를 만들고 repo를 돌려준다', () => {
+    const p = createProject({ name: 'r', idea: '', designMd: null, repo: 'octo/app' });
+    expect(p.repo).toBe('octo/app');
+    expect(listDocuments(p.id).map((d) => d.path).sort()).toEqual([...BASE_DOCS, BASELINE_DOC].sort());
+    expect(getProject(p.id)?.repo).toBe('octo/app');
+  });
+
+  it('repo가 없으면 repo는 null이고 changes/001-mvp.md를 만든다', () => {
+    const p = createProject({ name: 's', idea: 't', designMd: null });
+    expect(p.repo).toBeNull();
+    expect(getDocument(p.id, CHANGE_DOC)).toBeDefined();
+  });
+
+  it('repo 열이 없는 옛 DB를 열면 열을 추가하고 기존 행을 유지한다', () => {
+    const prev = process.env.SDDMAKER_DATA_DIR;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sddmaker-old-'));
+    getDb().close();
+    delete globalThis.__sddmakerDb;
+    process.env.SDDMAKER_DATA_DIR = dir;
+    try {
+      const old = new Database(path.join(dir, 'sddmaker.db'));
+      old.exec(`CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, idea TEXT NOT NULL,
+        design_md TEXT, created_at TEXT NOT NULL);
+        INSERT INTO projects (name, idea, created_at) VALUES ('old', 'i', '2020-01-01T00:00:00.000Z');`);
+      old.close();
+      const rows = listProjects();
+      expect(rows.map((r) => [r.name, r.repo])).toEqual([['old', null]]);
+    } finally {
+      getDb().close();
+      delete globalThis.__sddmakerDb;
+      if (prev === undefined) delete process.env.SDDMAKER_DATA_DIR;
+      else process.env.SDDMAKER_DATA_DIR = prev;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('deleteProject는 인터뷰·메시지·문서를 함께 지운다 (CASCADE)', () => {

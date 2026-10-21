@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import {
   BASE_DOCS,
+  BASELINE_DOC,
   CHANGE_DOC,
   NAME_RE,
   type DocKind,
@@ -27,7 +28,7 @@ export function stageOf(path: string): number {
   if (path in STAGE_OF) return STAGE_OF[path];
   if (path.startsWith('requirements/')) return 5;
   if (path.startsWith('screens/')) return 6;
-  if (path === CHANGE_DOC) return 7;
+  if (path === CHANGE_DOC || path === BASELINE_DOC) return 7;
   throw new Error(`unknown document path: ${path}`);
 }
 
@@ -35,7 +36,7 @@ export function kindOf(path: string): DocKind {
   if ((BASE_DOCS as readonly string[]).includes(path)) return 'base';
   if (path.startsWith('requirements/')) return 'requirement';
   if (path.startsWith('screens/')) return 'screen';
-  if (path === CHANGE_DOC) return 'change';
+  if (path === CHANGE_DOC || path === BASELINE_DOC) return 'change';
   throw new Error(`unknown document path: ${path}`);
 }
 

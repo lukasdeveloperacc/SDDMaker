@@ -68,6 +68,7 @@ flowchart TD
 | 항목 | Claude Code | Codex |
 | --- | --- | --- |
 | 실행 | `<CLAUDE_CLI> -p --output-format stream-json --verbose --include-partial-messages --tools "" --setting-sources "" --strict-mcp-config --session-id <uuid>` | `<CODEX_CLI> exec --json --sandbox read-only --skip-git-repo-check --ignore-user-config -C <작업 폴더> -` |
+| 저장소 모드 | `--tools Read,Grep,Glob --restricted --allowedTools Read,Grep,Glob` (`--tools ""` 대신) | `-c project_doc_max_bytes=0 -C <클론>` |
 | 이어하기 | `--session-id` 대신 `--resume <uuid>` | `exec <같은 옵션> resume <thread_id> -` |
 | 프롬프트 전달 | 표준입력 | 표준입력 (`-`) |
 | 세션 ID | 시도마다 새 UUID를 만들어 `--session-id`로 지정하고, 첫 턴이 성공한 뒤 저장 | 첫 이벤트 `thread.started`의 `thread_id` (첫 턴 성공 뒤 저장) |
@@ -115,20 +116,26 @@ flowchart TD
 
 ## 외부 연동: GitHub CLI
 
-> 상태: 예정 ([changes/009-github-repo.md](changes/009-github-repo.md)). 2026-10-20에 gh 2.90.0 도움말로 확인한 값이다. 구현 때 실제 실행으로 다시 확인한다.
+> 상태: 구현됨 — 가짜 CLI 검증 완료, 실제 계정 확인 전 ([changes/009-github-repo.md](changes/009-github-repo.md)). gh 2.90.0 기준(Docker 이미지에 고정).
 
 | 항목 | 명령 |
 | --- | --- |
-| 상태 확인 | `gh auth status --hostname github.com` — 미로그인 시 종료 코드 1 |
-| 로그인 | `gh auth login --hostname github.com --git-protocol https --web` (기기 코드·URL 출력) |
-| 로그아웃 | `gh auth logout --hostname github.com` |
-| 클론 | `gh repo clone <owner/repo> <폴더> -- --depth 1` |
-| 권한·기본 브랜치 | `gh repo view <owner/repo> --json viewerPermission,defaultBranchRef` |
+| 상태 확인 | `gh auth status --hostname github.com --json hosts` (활성 계정의 `login`을 읽음) |
+| 로그인 | `gh auth login --hostname github.com --git-protocol https --web --insecure-storage` (기기 코드·URL 출력) |
+| 로그아웃 | `gh auth logout --hostname github.com [--user <login>]` |
+| 클론 | `gh repo clone <owner/repo> <폴더> -- --depth 1 -c core.symlinks=false` |
+| 권한·기본 브랜치 | `gh repo view <owner/repo> --json nameWithOwner,defaultBranchRef,viewerPermission` |
+| 커밋 작성자 | `gh api user` (`login`, `id`) |
+| 브랜치 확인 | 같은 `credential.helper` 인자로 `git -C <worktree> ls-remote --heads origin refs/heads/<브랜치>` (push 전, 있으면 `pr_failed`) |
+| push | `git -C <worktree> -c credential.helper= -c credential.helper='!<gh> auth git-credential' push origin HEAD:refs/heads/<브랜치>` |
 | PR | `gh pr create --repo <owner/repo> --base <기본 브랜치> --head <브랜치> --title … --body-file -` |
 
-- 모든 `gh`는 `GH_CONFIG_DIR=<데이터 폴더>/gh-home`으로 실행한다. 로그인 PTY·잠금·취소는 에이전트 CLI 로그인과 같은 구조를 쓴다.
+- 모듈: `src/server/github.ts`(연결 상태·저장소 확인·클론), `src/server/github-pr.ts`(PR 정보·생성). 실행은 기존 `spawnCli`·`runLogin`·`runLogout`을 쓰고 `/api/agents/github/*`는 기존 동적 로그인 라우트를 공유한다. 로그인 PTY·잠금·취소는 에이전트 CLI 로그인과 같은 구조다. GitHub는 `AgentName`이 아니므로 에이전트 Select·DB에 나오지 않는다.
+- `gh`·`git` 자식 환경: `GH_CONFIG_DIR=<데이터 폴더>/gh-home`, `GIT_CONFIG_GLOBAL=<데이터 폴더>/gh-home/gitconfig`, `GH_PROMPT_DISABLED=1`, `GIT_TERMINAL_PROMPT=0`을 설정하고 `GH_TOKEN`·`GITHUB_TOKEN`·`GH_ENTERPRISE_TOKEN`·`GITHUB_ENTERPRISE_TOKEN`·`GH_HOST`와 에이전트 홈 변수를 지운다. 로그인 실행만 `GH_PROMPT_DISABLED`를 지운다. 에이전트(claude·codex) 자식 환경에서는 `GH_CONFIG_DIR`·`GIT_CONFIG_GLOBAL`을 지운다.
 - push는 git에 명령 단위로 `gh auth git-credential`을 자격 증명 도우미로 지정해 실행한다. 전역 git 설정을 바꾸지 않는다.
-- 클론은 `<데이터 폴더>/repos/<프로젝트 id>`에 두고, 저장소 프로젝트의 에이전트 작업 폴더로 쓴다. PR 커밋은 임시 worktree에서 만든다.
+- 토큰은 `--insecure-storage`로 `gh-home`의 파일에 저장된다. `claude-home`·`codex-home`과 같은 수준의 노출이며, 앱은 토큰을 읽지 않는다 ([위험](requirements/github.md#규칙)).
+- 클론은 `<데이터 폴더>/repos/<프로젝트 id>`에 두고(임시 `.tmp-<uuid>`에 받은 뒤 이름 변경, 15분 넘은 임시 폴더는 다음 생성 때 정리), 저장소 프로젝트의 에이전트 작업 폴더로 쓴다. PR 커밋은 `<데이터 폴더>/pr-worktrees/<프로젝트 id>-<시각>`의 detached worktree에서 만든다. 클론과 worktree 모두 `core.symlinks=false`다.
+- 실행 잠금 종류에 `pr`을 추가했다. PR은 올리기 요청(POST) 시점의 문서로 만들고, 진행 중에 문서를 고쳐도 그 PR은 바뀌지 않는다. PR 중에는 인터뷰(승인·건너뛰기·승인 취소 포함)·문서 생성·주석·다른 PR이 `busy`(409)이고, 문서 직접 저장·승인은 막지 않는다. 프로젝트 삭제는 진행 중인 PR을 취소하고, 5초 안에 멈추지 않을 때만 `busy`로 거절한다.
 
 ## 보안
 
@@ -158,8 +165,8 @@ CLI는 별도 프로세스 그룹으로 실행한다. 취소·연결 끊김·시
 | --- | --- | --- |
 | `CLAUDE_CLI` | Claude Code 실행 파일의 절대 경로. 인자를 넣지 않는다 | `claude` (PATH에서 찾음) |
 | `CODEX_CLI` | Codex 실행 파일의 절대 경로. 인자를 넣지 않는다 | `codex` (PATH에서 찾음) |
-| `GH_CLI` | (예정) GitHub CLI 실행 파일의 절대 경로. 인자를 넣지 않는다 | `gh` (PATH에서 찾음) |
-| `SDDMAKER_DATA_DIR` | DB 파일(`sddmaker.db`), CLI 작업 폴더(`agent-workdir/`), Claude 홈(`claude-home/`), Codex 홈(`codex-home/`)을 둘 폴더 | `./data` |
+| `GH_CLI` | GitHub CLI 실행 파일의 절대 경로. 인자를 넣지 않는다 | `gh` (PATH에서 찾음) |
+| `SDDMAKER_DATA_DIR` | DB 파일(`sddmaker.db`), CLI 작업 폴더(`agent-workdir/`), Claude 홈(`claude-home/`), Codex 홈(`codex-home/`), GitHub 설정(`gh-home/`), 저장소 클론(`repos/`), PR 임시 worktree(`pr-worktrees/`)를 둘 폴더 | `./data` |
 
 - 환경변수는 `.env.local`에 둔다. 셸 alias는 자식 프로세스에 적용되지 않으므로, `claude`를 alias로 쓰는 환경(예: `npx @anthropic-ai/claude-code`)은 Claude Code를 전역 설치하고 그 경로를 `CLAUDE_CLI`에 넣는다.
 - `./data/`는 git에서 제외한다.
@@ -169,7 +176,7 @@ CLI는 별도 프로세스 그룹으로 실행한다. 취소·연결 끊김·시
 
 로컬 실행 전용이며 외부 배포는 하지 않는다 ([0-PRODUCT.md](0-PRODUCT.md#제품-공통-정책)). Docker는 호스트 설치를 대신하는 실행 방법이다 ([changes/002-docker.md](changes/002-docker.md)).
 
-`Dockerfile`은 Node.js 24 Debian bookworm 기반의 다단계 빌드다. Linux 환경에서 `npm ci`와 Next.js standalone 빌드를 수행하므로 호스트의 `node_modules`나 SQLite 네이티브 모듈을 복사하지 않는다. 런타임에는 standalone 서버·정적 파일·`docs/AGENTS.md`와 Claude Code 2.1.303·Codex 0.162.1을 넣고 `node` 사용자로 실행한다. CLI 자동 업데이트는 끈다. 버전 변경 시 어댑터·로그인·sandbox 호환성을 다시 확인한다.
+`Dockerfile`은 Node.js 24 Debian bookworm 기반의 다단계 빌드다. Linux 환경에서 `npm ci`와 Next.js standalone 빌드를 수행하므로 호스트의 `node_modules`나 SQLite 네이티브 모듈을 복사하지 않는다. 런타임에는 standalone 서버·정적 파일·`docs/AGENTS.md`와 Claude Code 2.1.303·Codex 0.162.1·`gh` 2.90.0(아키텍처별 SHA-256 검증)을 넣고 `node` 사용자로 실행한다. CLI 자동 업데이트는 끈다. 버전 변경 시 어댑터·로그인·sandbox 호환성을 다시 확인한다.
 
 ```sh
 docker compose up -d --build --wait
@@ -193,7 +200,7 @@ docker stop sddmaker
 
 | 컨테이너 경로 | 보관 내용 | Compose 볼륨 |
 | --- | --- | --- |
-| `/app/data` | SQLite, 고정 작업 폴더, 앱 전용 Claude·Codex 홈·로그인 | `data` |
+| `/app/data` | SQLite, 고정 작업 폴더, 앱 전용 Claude·Codex·gh 홈·로그인, 저장소 클론 | `data` |
 | `/home/node` | 그 밖의 CLI 홈 파일·캐시 | `cli-home` |
 
 볼륨 이름에는 Compose 프로젝트 접두사가 붙는다. 호스트의 `./data`, `~/.claude`, `~/.codex`는 자동으로 공유하지 않는다. 컨테이너 재생성·`down` 후에도 볼륨은 남는다. `docker compose down -v` 또는 해당 Docker 볼륨 삭제는 DB와 로그인까지 지운다. `.dockerignore`는 로컬 데이터·환경변수·Git·빌드·작업 기록을 이미지 빌드에서 제외한다.

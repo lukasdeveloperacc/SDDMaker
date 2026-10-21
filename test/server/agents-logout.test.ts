@@ -5,7 +5,7 @@ import { POST } from '@/app/api/agents/[agent]/logout/route';
 import { claudeAdapter } from '@/server/agents/claude';
 import { codexAdapter } from '@/server/agents/codex';
 import { runLogout } from '@/server/agents/exec';
-import { claudeHome, codexHome, dataDir } from '@/server/env';
+import { claudeHome, codexHome, dataDir, ghHome } from '@/server/env';
 import { acquireLogin, isLoginRunning, releaseLogin } from '@/server/runtime';
 import { ctx, jsonReq } from '../helpers/route';
 
@@ -33,6 +33,17 @@ describe('POST /api/agents/:agent/logout', () => {
     expect(invocation[agent === 'claude' ? 'claudeHome' : 'codexHome']).toBe(home);
     expect(fs.readFileSync(config, 'utf8')).toBe('keep');
     expect(isLoginRunning(agent)).toBe(false);
+  });
+
+  it('github 로그아웃은 확인된 계정을 --user로 넘기고 전용 설정 폴더를 쓴다', async () => {
+    const record = path.join(dataDir(), 'logout-github.json');
+    process.env.FAKE_AUTH = 'logged_in';
+    process.env.FAKE_LOGOUT_FILE = record;
+    expect((await logoutRequest('github')).status).toBe(204);
+    const invocation = JSON.parse(fs.readFileSync(record, 'utf8'));
+    expect(invocation.args).toEqual(['auth', 'logout', '--hostname', 'github.com', '--user', 'octo']);
+    expect(invocation.ghConfigDir).toBe(ghHome());
+    expect(isLoginRunning('github')).toBe(false);
   });
 
   it.each(['claude', 'codex'] as const)('%s 실패 내용은 노출하지 않고 재시도할 수 있다', async (agent) => {

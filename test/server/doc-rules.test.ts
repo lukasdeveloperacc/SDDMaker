@@ -51,6 +51,8 @@ describe('경로 규칙', () => {
     expect(stageOf('requirements/project.md')).toBe(5);
     expect(stageOf('screens/home.html')).toBe(6);
     expect(stageOf('changes/001-mvp.md')).toBe(7);
+    expect(stageOf('changes/001-baseline.md')).toBe(7);
+    expect(kindOf('changes/001-baseline.md')).toBe('change');
     expect(kindOf('3-DATABASE.md')).toBe('base');
     expect(nameOf('requirements/project.md')).toBe('project');
     expect(nameOf('screens/home.html')).toBe('home');

@@ -20,12 +20,23 @@ RUN cd .next/standalone \
 FROM base AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.303
 ARG CODEX_VERSION=0.162.1
+ARG TARGETARCH
+ARG GH_VERSION=2.90.0
+ARG GH_SHA256_AMD64=b2aef7b23ec6899bf27f37a32c57a7935d0a178568ac33dc9bb03842f724195a
+ARG GH_SHA256_ARM64=1139e1ad912fcddb5ef4b957530184c2c30d9937ff65ff4e641fbf6ca5f28c7c
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get install -y --no-install-recommends ca-certificates curl git \
     && rm -rf /var/lib/apt/lists/* \
+    && case "$TARGETARCH" in amd64) GH_SHA256="$GH_SHA256_AMD64" ;; arm64) GH_SHA256="$GH_SHA256_ARM64" ;; *) echo "unsupported arch: $TARGETARCH" >&2; exit 1 ;; esac \
+    && GH_TARBALL="gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    && curl -fsSL -o "/tmp/${GH_TARBALL}" "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${GH_TARBALL}" \
+    && echo "${GH_SHA256}  /tmp/${GH_TARBALL}" | sha256sum -c - \
+    && tar -xzf "/tmp/${GH_TARBALL}" -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh" \
+    && rm -f "/tmp/${GH_TARBALL}" \
+    && gh --version \
     && npm install --global @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
     && npm cache clean --force \
-    && mkdir -p /app/data/codex-home /app/data/claude-home \
+    && mkdir -p /app/data/codex-home /app/data/claude-home /app/data/gh-home /app/data/repos /app/data/pr-worktrees \
     && chown -R node:node /app/data
 ENV NODE_ENV=production \
     DISABLE_AUTOUPDATER=1 \

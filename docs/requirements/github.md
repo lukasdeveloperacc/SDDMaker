@@ -1,6 +1,6 @@
 # GitHub 저장소
 
-> 상태: 예정 ([changes/009-github-repo.md](../changes/009-github-repo.md))
+> 상태: 구현됨 — 가짜 CLI 검증 완료, 사용자 확인(실제 계정 로그인·push·호스트 gh 분리) 전 ([changes/009-github-repo.md](../changes/009-github-repo.md))
 
 ## 목적
 
@@ -18,7 +18,7 @@
 
 ### 저장소에서 프로젝트 만들기
 
-- 새 프로젝트 화면에 **GitHub 저장소**(선택)를 둔다. `owner/repo` 또는 `https://github.com/owner/repo`(`.git` 허용)를 받는다.
+- 새 프로젝트 화면에 **GitHub 저장소**(선택)를 둔다. `owner/repo` 또는 `https://github.com/owner/repo`(두 형식 모두 `.git` 접미사 허용)를 받는다.
 - 저장소를 넣으면 아이디어는 선택 입력이다. 이름이 비어 있으면 `repo` 이름을 쓴다.
 - 서버는 GitHub 연결을 확인하고 기본 브랜치를 `--depth 1`로 `<데이터 폴더>/repos/<프로젝트 id>`에 클론한다. 클론이 끝나야 프로젝트가 만들어진다.
 - 프로젝트 상세 상단에 저장소 이름과 GitHub 링크를 보여 준다.
@@ -43,44 +43,58 @@
 
 - 저장소 입력은 `github.com`의 `owner/repo` 형식만 받는다. 이름에는 영문·숫자·`-`·`_`·`.`만 허용하고, 그 밖의 URL·경로·스킴은 거절한다.
 - 앱은 `gh` 공식 로그인만 실행하고 토큰을 읽거나 저장하지 않는다. git 인증은 `gh`의 자격 증명 도우미를 명령 단위로만 지정하고 전역 git 설정을 바꾸지 않는다.
-- `gh`는 `GH_CONFIG_DIR=<데이터 폴더>/gh-home`으로 실행한다. 호스트의 `gh` 로그인을 공유하지 않으므로 SDDMaker에서 한 번 더 로그인한다.
+- `gh`·`git`은 `GH_CONFIG_DIR=<데이터 폴더>/gh-home`, `GIT_CONFIG_GLOBAL=<데이터 폴더>/gh-home/gitconfig`로 실행하고 호스트의 `GH_TOKEN`·`GITHUB_TOKEN` 등은 지운다. 호스트의 `gh` 로그인을 공유하지 않으므로 SDDMaker에서 한 번 더 로그인한다.
+- 로그인은 `--insecure-storage`로 토큰을 `gh-home` 파일에 저장한다. Claude·Codex 홈과 같은 수준의 노출이다. 남는 위험: Codex `read-only`는 클론 밖의 파일도 읽을 수 있어 이 토큰 파일에 닿을 수 있다. 완화책은 ① 프롬프트의 "작업 폴더 밖을 읽지 않고 비밀값을 문서에 옮기지 않는다" 지시, ② push 전 토큰 모양(`gh*_…`, `github_pat_…`, `sk-ant-…`) 문서 검사 — 발견하면 PR을 올리지 않는다, ③ 사용자가 문서와 PR 확인 창을 검토하는 것이다. Claude는 `--restricted`로 작업 폴더 안으로 제한한다(실제 동작은 사용자 확인).
+- 클론과 PR worktree는 `core.symlinks=false`로 만든다. 저장소의 `docs/` 경로 중간에 폴더가 아닌 것(심볼릭 링크가 일반 파일로 풀린 경우 포함)이 있으면 `pr_failed`로 PR을 올리지 않는다.
 - 에이전트가 읽는 클론은 앱이 바꾸지 않는다. 문서는 PR용 임시 worktree에만 쓴다. 사용자 폴더에는 쓰지 않는다.
 - PR 조건은 zip 내보내기 조건([export.md](export.md#규칙))에 더해 GitHub 연결과 push 권한(`ADMIN`·`MAINTAIN`·`WRITE`)이다. 권한은 PR을 올릴 때마다 확인한다.
+- PR은 확인 창을 연 시점이 아니라 **올리기 요청 시점의** 문서로 만든다. PR 진행 중에는 인터뷰(승인·건너뛰기·승인 취소 포함)·문서 생성·주석·다른 PR이 `busy`(409)이고, 문서 직접 저장·승인은 막지 않는다. 프로젝트 삭제는 진행 중인 PR을 취소하고, 5초 안에 멈추지 않을 때만 `busy`로 거절한다.
 - push 권한이 없으면 PR을 올리지 않는다. 이유를 보여 주고 zip 다운로드를 안내한다. fork하지 않는다.
+- 기본 브랜치가 없는 빈 저장소에는 PR을 올릴 수 없다.
 - 저장소에 원래 있던 `docs/` 아래 다른 파일은 지우지 않는다. 같은 경로만 덮어쓴다.
-- 커밋 작성자는 연결한 GitHub 계정 이름과 GitHub noreply 메일이다. 커밋 메시지와 PR 제목은 `docs: SDD 문서 추가 (SDDMaker)`이다.
-- 클론·push·PR 생성은 각각 10분 상한이며 취소·시간 초과·서버 종료 시 프로세스 그룹을 정리한다 ([종료 처리](../1-SYSTEM-ARCHITECTURE.md#서버-공유-상태)).
+- 브랜치 이름의 시각은 UTC다(`sddmaker/docs-YYYYMMDD-HHmm`). push 전에 `git ls-remote --heads`로 원격에 같은 이름의 브랜치가 있는지 확인하고, 있으면 `pr_failed`로 "같은 이름의 브랜치가 있습니다. 1분 뒤 다시 시도하세요"를 보여 준다. 그 밖의 push 실패(확인 실패 포함)는 "GitHub에 브랜치를 올리지 못했습니다"다.
+- 커밋 작성자는 연결한 GitHub 계정 이름과 `<id>+<login>@users.noreply.github.com`이다. 커밋 메시지와 PR 제목은 `docs: SDD 문서 추가 (SDDMaker)`, PR 본문은 고정 문구다.
+- 클론·push·PR 생성은 각각 10분 상한이며 취소·시간 초과·서버 종료 시 프로세스 그룹을 정리한다 ([종료 처리](../1-SYSTEM-ARCHITECTURE.md#서버-공유-상태)). worktree는 성공·실패·취소 뒤 항상 지우고, 남은 것은 다음 PR 때 정리한다.
+- 클론은 프로젝트 생성 때 한 번 받는다. 앱이 중간에 꺼져 남은 임시 클론 폴더(`.tmp-*`)는 15분이 지나면 다음 저장소 프로젝트 생성 때 지운다.
 - 프로젝트를 삭제하면 클론 폴더도 지운다.
 
 ## 예외
 
-| 오류 코드 | 상황 | 처리 |
-| --- | --- | --- |
-| `gh_not_found` | `gh` 실행 파일 없음 | 설치 안내와 `GH_CLI` 설정 안내. 저장소 없이 만드는 것은 가능 |
-| `github_not_connected` | GitHub 미로그인 | 에이전트 연결 화면 링크 |
-| 400 | 저장소 형식 오류 | 입력 오류 표시 |
-| `repo_not_found` | 저장소가 없거나 연결 계정으로 볼 수 없음 | 저장소 입력 오류 표시. 프로젝트를 만들지 않는다 |
-| `clone_failed` | 클론 실패·시간 초과 | 오류와 다시 시도. 반쯤 받은 폴더는 지우고 프로젝트를 만들지 않는다 |
-| `no_push_permission` (409) | push 권한 없음 | PR 버튼 비활성, 이유와 zip 다운로드 안내 |
-| `pr_failed` | push 또는 PR 생성 실패 | 짧은 오류와 다시 시도. 원격에 올라간 브랜치는 지우지 않는다 |
+| 오류 코드 | HTTP | 상황 | 처리 |
+| --- | --- | --- | --- |
+| `gh_not_found` | 409 | `gh` 실행 파일 없음 | 설치 안내와 `GH_CLI` 설정 안내. 저장소 없이 만드는 것은 가능 |
+| `github_not_connected` | 409 | GitHub 미로그인 | 에이전트 연결 화면 링크 |
+| `invalid_input` | 400 | 저장소 형식 오류 | 입력 오류 표시 |
+| `repo_not_found` | 404 | 저장소가 없거나 연결 계정으로 볼 수 없음 | 저장소 입력 오류 표시. 프로젝트를 만들지 않는다 |
+| `clone_failed` | 502 | 클론 실패·시간 초과, 저장소 정보 확인 시간 초과 | 오류와 다시 시도. 반쯤 받은 폴더는 지우고 프로젝트를 만들지 않는다 |
+| `no_push_permission` | 409 | push 권한 없음 | PR 버튼 비활성, 이유와 zip 다운로드 안내 |
+| `export_blocked` | 409 | 승인 안 된 문서가 있음 | PR 버튼 비활성, 막는 문서 안내 |
+| `busy` | 409 | 다른 작업(PR 포함) 진행 중 | 끝난 뒤 다시 시도 |
+| `pr_failed` | 502 | push 또는 PR 생성 실패, 토큰 모양 발견, 클론 없음, 올릴 변경 없음, docs 경로가 폴더가 아님 | 짧은 오류와 다시 시도. 원격에 올라간 브랜치는 지우지 않는다 |
+| `pr_failed` | 409 | 빈 저장소 ("빈 저장소에는 PR을 올릴 수 없습니다") | 오류 표시. 다시 시도해도 같다 |
+| `not_found` | 404 | 프로젝트가 없거나 저장소 프로젝트가 아님 | — |
 
-## API (예정)
+## API
 
 | 메서드·경로 | 요청 | 응답 |
 | --- | --- | --- |
 | `GET /api/agents` | — | 기존 응답에 `github: { installed, loggedIn, login, loginCommand, loginRunning }` 추가 |
 | `POST·PUT·DELETE /api/agents/github/login`, `POST /api/agents/github/logout` | 기존 로그인 API와 같음 | 기존 로그인 API와 같음 |
-| `POST /api/projects` | 기존 요청에 `repo?` 추가 | 생성된 프로젝트. 저장소 오류는 위 예외 |
-| `GET /api/projects/:id/pr` | — | `{ repo, defaultBranch, canPush, files, overwrites }` |
-| `POST /api/projects/:id/pr` | — | `{ url }`. 조건 미충족 409 |
+| `POST /api/projects` | 기존 요청에 `repo?` 추가 | 201 생성된 프로젝트(`repo` 포함). 저장소 오류는 위 예외 |
+| `GET /api/projects/:id/pr` | — | 200 `{ repo, defaultBranch, canPush, files, overwrites }`. `files`는 `docs/…` 경로, `overwrites`는 클론에 이미 있는 일반 파일 |
+| `POST /api/projects/:id/pr` | — | 201 `{ url }`. 권한 없음 등 조건 미충족은 위 예외 |
+
+저장소 프로젝트에는 화면 정의서가 없어 주석(annotations) API는 바뀌지 않는다.
 
 ## 완료·테스트 기준
 
-- [ ] 에이전트 연결 화면에서 GitHub를 연결·해제할 수 있고, 호스트 `gh` 로그인과 섞이지 않는다.
-- [ ] `owner/repo`와 GitHub URL로 public·private 저장소 프로젝트를 만들 수 있다. 잘못된 형식·없는 저장소·클론 실패에는 프로젝트가 생기지 않는다.
-- [ ] 저장소 프로젝트의 인터뷰·문서 생성 후 클론에 변경이 없다.
-- [ ] 저장소 프로젝트에는 화면 정의서 단계가 없고 변경 기록이 `changes/001-baseline.md`다.
-- [ ] 모든 문서를 승인하면 PR 확인 창에 덮어쓸 파일이 정확히 보이고, PR에는 zip과 같은 파일이 들어 있다.
-- [ ] push 권한이 없는 저장소는 PR을 올릴 수 없고 zip 안내가 보인다.
-- [ ] PR 후 클론의 작업 트리가 깨끗하고 임시 worktree가 남지 않는다.
-- [ ] 프로젝트를 삭제하면 클론 폴더가 사라진다.
+가짜 `gh`·`claude`·`codex`로 자동 검증한 항목은 체크했다. 실제 계정이 필요한 항목은 [changes/009-github-repo.md](../changes/009-github-repo.md#사용자-확인)에서 확인한다.
+
+- [x] 에이전트 연결 화면에서 GitHub를 연결·해제할 수 있고, `gh` 환경이 호스트와 분리된다(자식 환경 테스트). 호스트 `gh` 로그인이 그대로인지는 사용자 확인.
+- [x] `owner/repo`와 GitHub URL로 저장소 프로젝트를 만들 수 있다. 잘못된 형식·없는 저장소·클론 실패에는 프로젝트가 생기지 않는다. 실제 public·private 저장소는 사용자 확인.
+- [x] 저장소 프로젝트의 에이전트가 클론에서 읽기 전용 인자로 실행된다. 실제 실행 후 클론에 변경이 없는지는 사용자 확인.
+- [x] 저장소 프로젝트에는 화면 정의서 단계가 없고 변경 기록이 `changes/001-baseline.md`다.
+- [x] 모든 문서를 승인하면 PR 확인 창에 덮어쓸 파일이 보이고, PR에는 zip과 같은 파일이 들어 있다.
+- [x] push 권한이 없는 저장소는 PR을 올릴 수 없고 zip 안내가 보인다.
+- [x] PR 후 임시 worktree가 남지 않는다. 실제 클론의 작업 트리가 깨끗한지는 사용자 확인.
+- [x] 프로젝트를 삭제하면 클론 폴더가 사라진다.

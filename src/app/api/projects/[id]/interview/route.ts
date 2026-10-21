@@ -5,6 +5,7 @@ import { acquireRun, getRun } from '@/server/runtime';
 import { apiError, parseId, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
 import { runTurn } from '@/server/interview-turn';
+import { runDirOf } from '@/server/documents';
 
 export const runtime = 'nodejs';
 
@@ -35,16 +36,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       // 상태 확인을 통과한 뒤에만 행을 만들거나 agent를 바꾼다 (CLI 미로그인이면 상태가 그대로).
       // 상태 확인 중 연결이 끊겼으면 행을 만들지 않는다.
       signal.throwIfAborted();
+      const dir = runDirOf(id); // 클론이 없으면 행을 만들기 전에 멈춘다
       const cur = getInterview(id);
       if (!cur) createInterview(id, agent, 'active');
       else if (cur.agent !== agent) updateInterview(id, { agent });
 
       const r = await runTurn({
         agent,
-        prompt: buildInterviewStartPrompt(project.idea),
+        prompt: buildInterviewStartPrompt(project.idea, project.repo),
         sessionId: null,
         onDelta,
         signal,
+        repoDir: dir,
       });
       // 저장 직전: 연결이 끊겼으면 아무것도 저장하지 않는다.
       signal.throwIfAborted();

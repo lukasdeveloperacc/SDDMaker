@@ -4,6 +4,7 @@ import { acquireRun, getRun } from '@/server/runtime';
 import { apiError, json, parseId, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
 import { runTurn, interviewOf } from '@/server/interview-turn';
+import { runDirOf } from '@/server/documents';
 import { stripFence } from '@/server/doc-rules';
 
 export const runtime = 'nodejs';
@@ -30,14 +31,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     handle,
     agent,
     execute: async ({ onDelta, signal }) => {
+      const dir = runDirOf(id);
       const r = await runTurn({
         agent,
-        prompt: buildInterviewSummaryPrompt(),
+        prompt: buildInterviewSummaryPrompt(project.repo),
         sessionId,
         rebuildPrompt: () =>
-          buildInterviewRebuildPrompt(project.idea, listMessages(rec.id), { kind: 'summary' }),
+          buildInterviewRebuildPrompt(project.idea, listMessages(rec.id), { kind: 'summary' }, project.repo),
         onDelta,
         signal,
+        repoDir: dir,
       });
       const summary = stripFence(r.text);
       // 저장 직전: 연결이 끊겼으면 요약을 저장하지 않는다.

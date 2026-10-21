@@ -1,4 +1,4 @@
-import type { AgentName, AgentsResponse } from '@/lib/contract';
+import type { AgentName } from '@/lib/contract';
 import { AgentError } from './exec';
 import { claudeAdapter } from './claude';
 import { codexAdapter } from './codex';
@@ -16,14 +16,6 @@ export async function ensureReady(agent: AgentName): Promise<void> {
   if (!s.installed) throw new AgentError('cli_not_found', '실행 파일을 찾을 수 없습니다');
   if (!s.loggedIn) throw new AgentError('not_logged_in', '로그인이 필요합니다');
   if (!s.subscription) throw new AgentError('not_subscription', '구독 로그인이 필요합니다 (API 키 방식은 쓰지 않습니다)');
-}
-
-export async function agentStatuses(): Promise<AgentsResponse> {
-  const [claude, codex] = await Promise.all([claudeAdapter.status(), codexAdapter.status()]);
-  return {
-    claude: { ...claude, loginCommand: claudeAdapter.loginCommand() },
-    codex: { ...codex, loginCommand: codexAdapter.loginCommand() },
-  };
 }
 
 export { AgentError } from './exec';

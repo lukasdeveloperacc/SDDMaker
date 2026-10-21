@@ -1,10 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { stripVTControlCharacters } from 'node:util';
 import type { AgentName, AgentErrorCode } from '@/lib/contract';
-import { agentWorkdir, cliPath, claudeHome, codexHome } from '../env';
+import { agentWorkdir, cliPath, claudeHome, codexHome, ghHome } from '../env';
 import { trackChild, untrackChild } from '../runtime';
 import type { LoginInput } from './types';
+
+// 실행 파일 이름. 에이전트 CLI, GitHub CLI(gh), git.
+export type CliName = AgentName | 'github' | 'git';
+// 자식 환경에 덮어쓸 값. undefined면 그 변수를 지운다.
+export type EnvOverride = Record<string, string | undefined>;
+export type LoginRunInput = LoginInput & { envOverride?: EnvOverride };
 
 export class AgentError extends Error {
   constructor(public code: AgentErrorCode, message: string) {
@@ -38,6 +45,15 @@ export const STRIPPED_ENV = [
   'OPENAI_BASE_URL',
 ] as const;
 
+// GitHub 토큰·호스트 변수는 gh·git 실행에서만 지운다 (에이전트 CLI 환경은 그대로 둔다).
+const GITHUB_ENV_STRIPPED = [
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
+  'GH_HOST',
+] as const;
+
 const STDERR_TAIL_BYTES = 4096;
 const KILL_GRACE_MS = 2000;
 
@@ -57,11 +73,29 @@ function signalGroup(child: ChildProcess, sig: NodeJS.Signals) {
   child.kill(sig);
 }
 
-export function childEnv(agent: AgentName): NodeJS.ProcessEnv {
+export function childEnv(cli: CliName, envOverride?: EnvOverride): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const k of STRIPPED_ENV) delete env[k];
-  if (agent === 'claude') env.CLAUDE_CONFIG_DIR = claudeHome();
-  if (agent === 'codex') env.CODEX_HOME = codexHome();
+  if (cli === 'claude' || cli === 'codex') {
+    delete env.GH_CONFIG_DIR;
+    delete env.GIT_CONFIG_GLOBAL;
+  }
+  if (cli === 'claude') env.CLAUDE_CONFIG_DIR = claudeHome();
+  if (cli === 'codex') env.CODEX_HOME = codexHome();
+  if (cli === 'github' || cli === 'git') {
+    for (const k of GITHUB_ENV_STRIPPED) delete env[k];
+    delete env.CLAUDE_CONFIG_DIR;
+    delete env.CODEX_HOME;
+    env.GH_CONFIG_DIR = ghHome();
+    env.GIT_CONFIG_GLOBAL = path.join(ghHome(), 'gitconfig');
+    env.GIT_TERMINAL_PROMPT = '0';
+    env.GH_NO_UPDATE_NOTIFIER = '1';
+    env.GH_PROMPT_DISABLED = '1';
+  }
+  for (const [k, v] of Object.entries(envOverride ?? {})) {
+    if (v === undefined) delete env[k];
+    else env[k] = v;
+  }
   return env;
 }
 
@@ -70,8 +104,10 @@ export function shellQuote(value: string): string {
 }
 
 // 셸을 거치지 않는다. 자식이 끝나거나 취소·시간 초과로 죽은 뒤에 resolve/reject한다.
-export function spawnCli(agent: AgentName, args: string[], opts: {
+export function spawnCli(cli: CliName, args: string[], opts: {
   stdin?: string;
+  cwd?: string;
+  envOverride?: EnvOverride;
   signal: AbortSignal;
   onLine?: (line: string) => void;
   onStderrLine?: (line: string) => void; // 로그인 안내가 표준 오류로 나올 때 쓴다
@@ -87,9 +123,9 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
     }
 
     // detached: 자식이 새 프로세스 그룹의 대장이 되어 손자 프로세스를 함께 끌 수 있다.
-    const child = spawn(cliPath(agent), args, {
-      cwd: agentWorkdir(),
-      env: childEnv(agent),
+    const child = spawn(cliPath(cli), args, {
+      cwd: opts.cwd ?? agentWorkdir(),
+      env: childEnv(cli, opts.envOverride),
       stdio: 'pipe',
       detached: true,
     });
@@ -191,8 +227,8 @@ export function spawnCli(agent: AgentName, args: string[], opts: {
   });
 }
 
-export async function runLogout(agent: AgentName, args: string[], signal: AbortSignal): Promise<void> {
-  const result = await spawnCli(agent, args, {
+export async function runLogout(cli: CliName, args: string[], signal: AbortSignal): Promise<void> {
+  const result = await spawnCli(cli, args, {
     signal,
     timeoutMs: 15_000,
     timeoutError: new AgentError('agent_failed', '연결 해제 시간이 초과되었습니다'),
@@ -205,10 +241,10 @@ const URL_RE = /https?:\/\/[^\s"'<>]+/;
 const CODE_RE = /\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/;
 
 // 로그인 CLI를 실행하고 URL·코드 안내를 onPrompt로 넘긴다. 출력 원문은 저장하거나 로그에 남기지 않는다.
-export async function runLogin(agent: AgentName, args: string[], i: LoginInput): Promise<void> {
+export async function runLogin(cli: CliName, args: string[], i: LoginRunInput): Promise<void> {
   if (i.terminal) {
     const { runPtyLogin } = await import('./login-pty');
-    return runPtyLogin(agent, args, i);
+    return runPtyLogin(cli, args, i);
   }
   let url: string | null = null;
   let code: string | undefined;
@@ -223,8 +259,9 @@ export async function runLogin(agent: AgentName, args: string[], i: LoginInput):
     if (url && (url !== prevUrl || code !== prevCode)) i.onPrompt(code ? { url, code } : { url });
   };
   try {
-    const result = await spawnCli(agent, args, {
+    const result = await spawnCli(cli, args, {
       stdin: '',
+      envOverride: i.envOverride,
       signal: i.signal,
       onLine: scan,
       onStderrLine: scan,

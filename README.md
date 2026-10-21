@@ -17,6 +17,8 @@ docker compose exec sddmaker codex login --device-auth
 
 앱이 표시하거나 터미널에 출력된 URL은 이용 중인 브라우저에서 엽니다. 브라우저로 계정을 인증하더라도 로그인 정보는 컨테이너의 SDDMaker 전용 저장소에만 남습니다. 호스트에 두 CLI가 설치되거나 로그인되어 있을 필요가 없습니다.
 
+이미지에는 GitHub CLI(`gh`)도 들어 있습니다. GitHub 계정은 에이전트 연결에서 앱 전용으로 로그인하며, 로그인(`gh-home`)과 저장소 클론(`repos`)은 `data` 볼륨에 저장됩니다.
+
 DB와 두 CLI의 로그인·설정은 `data` 볼륨(`/app/data/claude-home`, `/app/data/codex-home`), 그 밖의 CLI 홈 파일은 `cli-home` 볼륨에 저장되어 컨테이너를 다시 만들어도 유지됩니다. `docker compose down`으로 중지합니다. `down -v`는 저장 데이터와 로그인을 삭제하므로 사용하지 않습니다.
 
 다른 포트는 `SDDMAKER_PORT=3001 docker compose up -d --wait`로 지정합니다. Docker만 사용하는 방법과 CLI의 컨테이너 제약은 [컨테이너 실행 안내](docs/1-SYSTEM-ARCHITECTURE.md#dockerdocker-compose-실행)를 참고하세요.

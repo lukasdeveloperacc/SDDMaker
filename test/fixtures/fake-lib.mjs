@@ -30,6 +30,7 @@ export async function logout() {
       args: process.argv.slice(2),
       claudeHome: process.env.CLAUDE_CONFIG_DIR,
       codexHome: process.env.CODEX_HOME,
+      ghConfigDir: process.env.GH_CONFIG_DIR,
     }));
   }
   process.exit(0);

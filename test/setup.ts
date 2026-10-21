@@ -12,7 +12,8 @@ process.env.SDDMAKER_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sddmaker-
 // 실제 CLI를 부르지 않도록 항상 가짜 실행 파일로 바꾼다.
 process.env.CLAUDE_CLI = path.join(root, 'test/fixtures/fake-claude.mjs');
 process.env.CODEX_CLI = path.join(root, 'test/fixtures/fake-codex.mjs');
-for (const f of [process.env.CLAUDE_CLI, process.env.CODEX_CLI]) {
+process.env.GH_CLI = path.join(root, 'test/fixtures/fake-gh.mjs');
+for (const f of [process.env.CLAUDE_CLI, process.env.CODEX_CLI, process.env.GH_CLI]) {
   if (fs.existsSync(f)) fs.chmodSync(f, 0o755);
 }
 

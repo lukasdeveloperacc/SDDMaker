@@ -1,7 +1,8 @@
-import { isAgentName } from '@/lib/contract';
+import { isLoginTarget, type LoginTarget } from '@/lib/contract';
 import { AgentError } from '@/server/agents/exec';
 import { getAdapter } from '@/server/agents';
-import type { AgentAdapter } from '@/server/agents/types';
+import type { LoginInput } from '@/server/agents/types';
+import { githubCli } from '@/server/github';
 import { acquireLogin, cancelLogin, releaseLogin, setLoginCodeInput, submitLoginCode, writeLoginInput, setLoginTerminal, loginTerminal } from '@/server/runtime';
 import { apiError, readJson } from '@/server/http';
 import { createSse } from '@/server/sse';
@@ -10,7 +11,17 @@ export const runtime = 'nodejs';
 
 const LOGIN_TIMEOUT_MS = 600_000;
 
-async function loggedInAfterLogin(adapter: AgentAdapter): Promise<boolean> {
+// 에이전트 어댑터와 GitHub CLI가 공유하는 로그인 동작.
+interface LoginAdapter {
+  login(i: LoginInput): Promise<void>;
+  status(): Promise<{ loggedIn: boolean }>;
+}
+
+function adapterFor(target: LoginTarget): LoginAdapter {
+  return target === 'github' ? githubCli : getAdapter(target);
+}
+
+async function loggedInAfterLogin(adapter: LoginAdapter): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       return (await adapter.status()).loggedIn;
@@ -23,7 +34,7 @@ async function loggedInAfterLogin(adapter: AgentAdapter): Promise<boolean> {
 
 export async function POST(req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
-  if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
+  if (!isLoginTarget(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
   const body = await readJson(req);
   if (!body || (body.terminal !== undefined && typeof body.terminal !== 'boolean')) return apiError(400, 'invalid_input', '잘못된 로그인 요청입니다');
   const controller = acquireLogin(agent);
@@ -34,7 +45,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
   const startedAt = Date.now();
   console.info('agent_login', { agent, event: 'start' });
 
-  const adapter = getAdapter(agent);
+  const adapter = adapterFor(agent);
   const sse = createSse(req.signal);
   // 브라우저 연결이 끊기거나 cancel되면 로그인 프로세스를 끝낸다.
   const onDisconnect = () => controller.abort();
@@ -85,7 +96,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
 
 export async function PUT(req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
-  if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
+  if (!isLoginTarget(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
   const body = await readJson(req);
   if (body && (Object.hasOwn(body, 'data') || Object.hasOwn(body, 'cols') || Object.hasOwn(body, 'rows'))) {
     if (typeof body.loginId !== 'string' || Object.hasOwn(body, 'code') || Object.hasOwn(body, 'input')) return apiError(400, 'invalid_input', '잘못된 터미널 요청입니다');
@@ -118,7 +129,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ agent: string }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ agent: string }> }) {
   const { agent } = await ctx.params;
-  if (!isAgentName(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
+  if (!isLoginTarget(agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
   if (!await cancelLogin(agent)) return apiError(409, 'login_running', '이전 로그인 종료를 기다리고 있습니다. 잠시 후 다시 취소하세요');
   return new Response(null, { status: 204 });
 }

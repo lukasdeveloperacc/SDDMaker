@@ -108,6 +108,8 @@ export function StageNav({
     />
   );
   const exportOk = detail.exportGate.ok;
+  // 저장소 프로젝트는 화면 정의서를 만들지 않는다.
+  const repo = detail.project.repo;
 
   return (
     <nav aria-label="단계" className="stage-nav">
@@ -115,7 +117,7 @@ export function StageNav({
         <label htmlFor={selectId}>단계</label>
         <select id={selectId} value={selected} onChange={(event) => onSelect(event.target.value)}>
           <option value={INTERVIEW_KEY}>인터뷰 · {INTERVIEW_TEXT[ivKey].text}</option>
-          {(['base', 'requirement', 'screen', 'change'] as const).map((kind) => (
+          {(['base', 'requirement', ...(repo ? [] : ['screen' as const]), 'change'] as const).map((kind) => (
             <optgroup key={kind} label={{ base: '기본 문서', requirement: '요구사항 문서', screen: '화면 정의서', change: '변경 기록' }[kind]}>
               {docs(kind).map((doc) => <option key={doc.path} value={doc.path}>{docLabel(doc)} · {STATUS_TEXT[doc.status].text}{doc.running ? ' · 실행 중' : ''}{doc.upstreamChanged ? ' · 앞 문서 변경됨' : ''}{doc.missingFromList ? ' · 목록에서 빠짐' : ''}</option>)}
             </optgroup>
@@ -147,13 +149,15 @@ export function StageNav({
         )}
       </Group>
 
-      <Group title="화면 정의서">
-        {docs('screen').length > 0 ? (
-          docs('screen').map(itemFor)
-        ) : (
-          <li className="caption">화면 목록이 정해지면 나타납니다.</li>
-        )}
-      </Group>
+      {!repo && (
+        <Group title="화면 정의서">
+          {docs('screen').length > 0 ? (
+            docs('screen').map(itemFor)
+          ) : (
+            <li className="caption">화면 목록이 정해지면 나타납니다.</li>
+          )}
+        </Group>
+      )}
 
       <Group title="변경 기록">{docs('change').map(itemFor)}</Group>
 
