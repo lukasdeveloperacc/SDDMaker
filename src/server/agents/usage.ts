@@ -50,10 +50,10 @@ export function recordClaudeRateLimit(ev: unknown): void {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// `/usage` 한 줄: `<label>: 47% used · resets Oct 21 at 10:50am (UTC)`. 날짜가 없으면 오늘(지났으면 내일)이다.
+// `/usage` 한 줄: `<label>: 47% used · resets Oct 21 at 10:50am (UTC)` (2.1.303은 `Oct 21, 9:59am`). 날짜가 없으면 오늘(지났으면 내일)이다.
 // 연도는 출력에 없어서, 하루 넘게 지난 날짜면 다음 해로 본다.
 function claudeUsageLine(text: string, label: string, now: number): UsageWindow | null {
-  const m = text.match(new RegExp(`^${label}: (\\d+)% used\\D*?resets (?:([A-Z][a-z]{2}) (\\d{1,2}) at )?(\\d{1,2})(?::(\\d{2}))?(am|pm) \\(UTC\\)`, 'm'));
+  const m = text.match(new RegExp(`^${label}: (\\d+)% used\\D*?resets (?:([A-Z][a-z]{2}) (\\d{1,2})(?:,| at) )?(\\d{1,2})(?::(\\d{2}))?(am|pm) \\(UTC\\)`, 'm'));
   if (!m) return null;
   const [, pct, mon, day, h, min, ampm] = m;
   const hour = (Number(h) % 12) + (ampm === 'pm' ? 12 : 0);

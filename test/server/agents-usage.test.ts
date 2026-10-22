@@ -206,6 +206,7 @@ describe('Claude /usage 해석', () => {
     expect(at('9am (UTC)')).toBe('2026-10-21T09:00:00.000Z');
     expect(at('7am (UTC)')).toBe('2026-10-22T07:00:00.000Z');
     expect(at('Oct 22 at 12am (UTC)')).toBe('2026-10-22T00:00:00.000Z');
+    expect(at('Oct 21, 9:59pm (UTC)')).toBe('2026-10-21T21:59:00.000Z'); // Claude Code 2.1.303 형식
     expect(at('Oct 22 at 12:05pm (UTC)')).toBe('2026-10-22T12:05:00.000Z');
     expect(at('Jan 2 at 1am (UTC)', Date.UTC(2026, 11, 30))).toBe('2027-01-02T01:00:00.000Z');
   });
