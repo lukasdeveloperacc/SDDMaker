@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createInterface } from 'node:readline';
-import { answerFor, envReport, logout, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
+import { answerFor, envReport, logout, mode, newId, readStdin, recordPid, scenarioTarget, stderrFlood } from './fake-lib.mjs';
 
 const argv = process.argv.slice(2);
 // FAKE_IGNORE_TERM=1이면 SIGTERM을 무시한다 (정리 로직이 SIGKILL까지 가는지 확인용).
@@ -118,6 +118,12 @@ async function run() {
   }
 
   const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
+  const target = scenarioTarget(stdin);
+  if (process.env.FAKE_CORE_SCENARIOS === '1' && target === process.env.FAKE_SCENARIO_HANG_PATH) await hang();
+  if (process.env.FAKE_CORE_SCENARIOS === '1' && target === process.env.FAKE_SCENARIO_FAIL_PATH) {
+    emit({ type: 'result', subtype: 'error', is_error: true, result: 'fake scenario failure', session_id: sid });
+    process.exit(0);
+  }
   emit({ type: 'system', subtype: 'init', session_id: sid });
   if (process.env.FAKE_NULL_LINE === '1') process.stdout.write('null\n');
 

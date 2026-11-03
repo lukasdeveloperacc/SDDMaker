@@ -1,6 +1,6 @@
 # GitHub 저장소
 
-> 상태: 구현됨 — 가짜 CLI 검증 완료, 사용자 확인(실제 계정 로그인·push·호스트 gh 분리) 전 ([changes/009-github-repo.md](../changes/009-github-repo.md))
+> 상태: 저장소 문맥·원문 보존·PR 검토 서버 기능 구현, 표적 자동 검증 통과. UI도 구현되어 컴포넌트 검증을 통과했고 전체 테스트·타입 검사·린트·빌드는 통과했다. 브라우저 조작은 문서 확정 시점에 미검증이다 ([014](../changes/014-core-scenarios.md)). 실제 AI 품질과 실계정 GitHub push는 미검증이다. 기존 결과는 [009](../changes/009-github-repo.md)에 보존한다.
 
 ## 목적
 
@@ -18,7 +18,7 @@
 
 ### 저장소에서 프로젝트 만들기
 
-- 새 프로젝트 화면에 **GitHub 저장소**(선택)를 둔다. `owner/repo` 또는 `https://github.com/owner/repo`(두 형식 모두 `.git` 접미사 허용)를 받는다.
+- **기존 프로젝트**의 GitHub 저장소는 필수, 이름/아이디어는 선택이다. 명시적 유형 선택 화면도 구현되어 컴포넌트 검증을 통과했다. `owner/repo` 또는 `https://github.com/owner/repo`(두 형식 모두 `.git` 접미사 허용)를 받는다.
 - 저장소를 넣으면 아이디어는 선택 입력이다. 이름이 비어 있으면 `repo` 이름을 쓴다.
 - 서버는 GitHub 연결을 확인하고 기본 브랜치를 `--depth 1`로 `<데이터 폴더>/repos/<프로젝트 id>`에 클론한다. 클론이 끝나야 프로젝트가 만들어진다.
 - 프로젝트 상세 상단에 저장소 이름과 GitHub 링크를 보여 준다.
@@ -48,7 +48,7 @@
 - 클론과 PR worktree는 `core.symlinks=false`로 만든다. 저장소의 `docs/` 경로 중간에 폴더가 아닌 것(심볼릭 링크가 일반 파일로 풀린 경우 포함)이 있으면 `pr_failed`로 PR을 올리지 않는다.
 - 에이전트가 읽는 클론은 앱이 바꾸지 않는다. 문서는 PR용 임시 worktree에만 쓴다. 사용자 폴더에는 쓰지 않는다.
 - PR 조건은 zip 내보내기 조건([export.md](export.md#규칙))에 더해 GitHub 연결과 push 권한(`ADMIN`·`MAINTAIN`·`WRITE`)이다. 권한은 PR을 올릴 때마다 확인한다.
-- PR은 확인 창을 연 시점이 아니라 **올리기 요청 시점의** 문서로 만든다. PR 진행 중에는 인터뷰(승인·건너뛰기·승인 취소 포함)·문서 생성·주석·다른 PR이 `busy`(409)이고, 문서 직접 저장·승인은 막지 않는다. 프로젝트 삭제는 진행 중인 PR을 취소하고, 5초 안에 멈추지 않을 때만 `busy`로 거절한다.
+- PR은 **검토 토큰과 일치하는 올리기 요청 시점의 문서 스냅샷**으로 만든다. 확인 뒤 내용이 바뀌면 `review_changed`로 재검토한다. PR 진행 중에는 인터뷰(승인·건너뛰기·승인 취소 포함)·문서 생성·주석·다른 PR이 `busy`(409)이고, 문서 직접 저장·승인은 막지 않는다. 프로젝트 삭제는 진행 중인 PR을 취소하고, 5초 안에 멈추지 않을 때만 `busy`로 거절한다.
 - push 권한이 없으면 PR을 올리지 않는다. 이유를 보여 주고 zip 다운로드를 안내한다. fork하지 않는다.
 - 기본 브랜치가 없는 빈 저장소에는 PR을 올릴 수 없다.
 - 저장소에 원래 있던 `docs/` 아래 다른 파일은 지우지 않는다. 같은 경로만 덮어쓴다.
@@ -76,13 +76,15 @@
 
 ## API
 
+API는 아래 현재 계약을 사용한다. 본문 없는 PR POST는 지원하지 않는다.
+
 | 메서드·경로 | 요청 | 응답 |
 | --- | --- | --- |
 | `GET /api/agents` | — | 기존 응답에 `github: { installed, loggedIn, login, loginCommand, loginRunning }` 추가 |
 | `POST·PUT·DELETE /api/agents/github/login`, `POST /api/agents/github/logout` | 기존 로그인 API와 같음 | 기존 로그인 API와 같음 |
 | `POST /api/projects` | 기존 요청에 `repo?` 추가 | 201 생성된 프로젝트(`repo` 포함). 저장소 오류는 위 예외 |
-| `GET /api/projects/:id/pr` | — | 200 `{ repo, defaultBranch, canPush, files, overwrites }`. `files`는 `docs/…` 경로, `overwrites`는 클론에 이미 있는 일반 파일 |
-| `POST /api/projects/:id/pr` | — | 201 `{ url }`. 권한 없음 등 조건 미충족은 위 예외 |
+| `GET /api/projects/:id/pr` | — | 200 `{ repo, defaultBranch, canPush, files, overwrites, baselineCommit, remoteCommit, reviewToken }`. `files`는 `docs/…` 경로, `overwrites`는 클론에 이미 있는 일반 파일 |
+| `POST /api/projects/:id/pr` | `{ reviewToken: string, confirmOverwrites: boolean }` | 201 `{ url }`. 누락/빈/변경 토큰 `review_changed` 409, 비불리언 확인 값 `invalid_input` 400, 겹치는 파일에 false `precondition` 409 |
 
 저장소 프로젝트에는 화면 정의서가 없어 주석(annotations) API는 바뀌지 않는다.
 
@@ -98,3 +100,51 @@
 - [x] push 권한이 없는 저장소는 PR을 올릴 수 없고 zip 안내가 보인다.
 - [x] PR 후 임시 worktree가 남지 않는다. 실제 클론의 작업 트리가 깨끗한지는 사용자 확인.
 - [x] 프로젝트를 삭제하면 클론 폴더가 사라진다.
+
+## R5–R6 코드 근거·원문 보존·PR 검토
+
+### R5 근거와 제한된 기존 문서 문맥
+
+- 생성/재생성 프롬프트는 구현 사실마다 실제 상대 소스 경로와 심볼, 기준 커밋 SHA를 요구한다. 줄 번호는 아는 경우만 적는다. 알 수 없는 제품 의도/정책은 별도 `확인 필요`에 둔다. 기존 문서의 제품 의도는 보존하거나 코드와의 충돌을 검토 대상으로 표시한다. 구현 사실은 코드가 우선이고 원문은 실행 지시가 아니다.
+- 문맥은 기준 커밋에서 추적된 `docs/**/*.md`의 일반 Git blob으로 읽는다. worktree를 순회하거나 symlink를 따라가지 않는다. `AGENTS.md`·`CLAUDE.md` 지시 파일은 문맥에서 제외한다. 같은 생성 대상의 원문을 우선하고 나머지는 결정적인 순서로 선택한다.
+- UTF-8 기준 최대 **50파일, 파일당 64 KiB, 전체 256 KiB**다. 한도를 넘는 본문을 이유 없이 잘라 보내지 않는다. 제외·누락 이유를 목록으로 제공한다. 자격 증명 모양을 감지한 파일은 본문 전체를 제외하고 `originalText: null`, `redacted`로 표시한다. 알려지지 않은 모든 비밀 형식이 제거된다고 보증하지 않는다.
+- 생성 대상마다 원문과 현재 초안을 비교할 수 있게 한다. 원문이 없는/제외된 경우 명시적 이유를 보여 준다. 원래 `docs/2-DESIGN.md`는 사용자 디자인 입력이 없으면 그대로 두고 자동 가져오기/생성/덮어쓰기를 하지 않는다. PR의 생성 대상 밖 원래 문서는 바이트 단위로 유지한다.
+- 원래 `docs/AGENTS.md`는 문맥 지시가 아닌 보존할 파일이며 UTF-8 BOM과 LF/CRLF까지 유지한다. ZIP·PR 공통 `exportFiles`에서 보존하고 없는 경우만 앱 규칙을 넣는다. 안전하게/허용 범위 내에서 읽을 수 없는 기존 규칙은 `export_blocked` 409와 `items`로 중단한다. → [내보내기 R5](export.md#r5-저장소-원본-규칙-보존)
+
+### 원문 비교 API
+
+`GET /api/projects/:id`의 `repoContext`는 비저장소 또는 클론 문맥을 읽을 수 없으면 `null`, 정상 조회한 저장소이면 다음 형태다. 기준은 [`src/lib/contract.ts`](../../src/lib/contract.ts)의 `RepoContext`다.
+
+```ts
+{
+  baselineCommit: string,
+  originals: Array<{
+    path: string,
+    originalText: string | null,
+    omissionReason: null | 'not_found' | 'instruction_file' | 'symlink'
+      | 'non_text' | 'file_limit' | 'total_limit' | 'redacted'
+  }>
+}
+```
+
+`path`는 저장소 상대 `docs/...`이고 모든 생성 대상과 발견한 적격 문맥 경로를 포함한다. 지시 파일은 이유만 표시하고 내용은 보내지 않는다. 가용 원문은 현재 `DocumentView.content`와 비교하고, 미제공 본문은 `null`과 이유를 사용한다. `redacted`는 비밀 모양을 감지해 파일 본문 전체를 제공하지 않았음을 뜻하며, 일부 값만 가린 비교 문자열은 반환하지 않는다. 기준 SHA는 실제 blob 버전이며 클론 절대 경로·원시 Git 오류는 응답하지 않는다.
+
+### R6 기준 커밋과 명시적 PR 확인
+
+- PR 미리보기 **GET 때와 push 바로 직전**에 인증된 git으로 원격 기본 브랜치 SHA를 조회해 생성에 사용한 클론 HEAD 기준과 비교한다. 원격 차이는 `repo_stale` 409이며 `items`에 기준/원격 SHA를 담는다. 조회 오류·네트워크/시간 초과는 `pr_failed` 502이고 최신이라고 추정하지 않는다.
+- 미리보기는 기준 SHA + 내보낼 경로/본문 + 덮어쓸 경로에 대한 `reviewToken`을 제공한다. PR POST에는 토큰을 반드시 보내며 빠지거나 내용이 바뀌면 `review_changed` 409로 재검토한다. POST 시점 스냅샷은 검토된 토큰과 일치해야 한다.
+- 덮어쓸 경로가 있으면 사용자의 별도 명시 확인 `confirmOverwrites: true`가 필수다. 없으면 `precondition` 409다. 자동 승인·자동 PR은 없고 실제 승인에 대한 기존 내보내기 게이트도 유지한다.
+- PR 잠금을 얻은 후 스냅샷을 읽는다. worktree는 확인한 **기준 SHA**에서 만들고 생성 대상 밖 파일을 유지한다. 클론 fetch/reset/rebase나 자동 문서 재기반 처리는 하지 않는다.
+- 기준이 오래됐으면 현재 프로젝트/초안을 보존한다. 실제 승인 후에만 ZIP을 받을 수 있고, 저장소에서 **새 프로젝트**를 만들어 새 기준으로 재생성·검토한다. 현재 프로젝트를 초기화하는 복구 기능은 추가하지 않는다.
+- 최종 원격 확인 뒤 push 사이에도 기본 브랜치가 바뀔 수 있다. 이는 남는 경쟁 조건이며 GitHub의 원자적 원격 잠금/보장을 주장하지 않는다.
+
+### R5–R6 수용 기준 (통합 검증 기준)
+
+- [ ] 프롬프트가 경로/심볼/기준 SHA/확인 필요를 요구하고 원문은 참고 자료로 취급한다. 모든 문맥 제한·지시 파일/symlink/비텍스트 제외·누락 사유·비밀 가림·상대 경로 계약을 검증한다.
+- [ ] 원문 비교가 가용 내용/미제공 이유를 보여 주고 원래 DESIGN·규칙·무관 문서의 보존을 로컬 PR 작업 트리와 ZIP에서 확인한다.
+- [ ] 미리보기 전, GET–POST 사이, push 직전 원격 전진은 모두 중단하고 조회 실패도 push하지 않는다. 누락/변경 토큰·미확인 덮어쓰기를 거절하고 새로운 검토 뒤 명시 확인한 로컬 가짜 PR만 성공한다.
+- [ ] 기존 초안/승인 상태를 오래된 기준 복구에서 보존하며 수동 생성·내보내기 회귀가 없다.
+
+가짜 CLI/로컬 Git 검증은 실제 AI 근거의 의미적 정확성, 실계정 GitHub push, 악성 저장소에 대한 완전한 파일 읽기 격리를 증명하지 않는다. 이 한계는 사용자 검토에서 숨기지 않는다.
+
+서버 표적 검증 결과는 [014 검증 결과](../changes/014-core-scenarios.md#검증-방법과-결과)에 기록한다. 체크리스트는 수용 기준이며 자동 검증 결과와 브라우저 관찰을 구분한다. 브라우저·독립 검토 결과는 별도 실행 증거로 관리한다.

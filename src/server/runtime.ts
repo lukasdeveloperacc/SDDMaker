@@ -1,4 +1,4 @@
-import type { LoginTarget, RunKind } from '@/lib/contract';
+import type { BatchView, LoginTarget, RunKind } from '@/lib/contract';
 import { randomUUID } from 'node:crypto';
 
 interface RunEntry {
@@ -7,6 +7,7 @@ interface RunEntry {
   controller: AbortController;
   released: Promise<void>;
   markReleased: () => void;
+  batch?: { currentPath: string | null; error: BatchView['error'] };
 }
 
 interface LoginEntry {
@@ -32,6 +33,7 @@ export interface RunHandle {
   kind: RunKind;
   path: string | null;
   controller: AbortController;
+  setBatch(currentPath: string | null, error?: BatchView['error']): void;
   release(): void;
 }
 
@@ -49,6 +51,7 @@ export function acquireRun(projectId: number, kind: RunKind, path: string | null
     kind,
     path,
     controller,
+    setBatch(currentPath, error = null) { entry.path = currentPath; entry.batch = { currentPath, error }; },
     release() {
       if (done) return;
       done = true;
@@ -193,3 +196,9 @@ function installExitCleanup(): void {
     process.on(sig, onSignal);
   }
 }
+
+export function batchRuntime(projectId: number): { currentPath: string | null; error: BatchView['error'] } | null {
+  const entry = state.runs.get(projectId);
+  return entry?.kind === 'batch' ? entry.batch ?? { currentPath: null, error: null } : null;
+}
+export function batchBusy(projectId: number): boolean { return getRun(projectId)?.kind === 'batch'; }

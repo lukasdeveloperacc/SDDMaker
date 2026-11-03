@@ -396,11 +396,12 @@ describe('승인·승인 취소·확인·삭제', () => {
     expect(getDocument(p.id, '1-SYSTEM-ARCHITECTURE.md')).toMatchObject({ status: 'approved', upstreamChanged: false });
   });
 
-  it('draft에 확인을 보내면 409 invalid_state', async () => {
+  it('표시가 있는 draft 확인은 상태와 본문을 유지한다', async () => {
     const p = newProject();
     setDoc(p.id, '1-SYSTEM-ARCHITECTURE.md', { content: 'a', status: 'draft', upstreamChanged: true });
     const res = await acknowledgePOST(jsonReq('POST', u(p.id, '1-SYSTEM-ARCHITECTURE.md', 'acknowledge')), c(p.id, '1-SYSTEM-ARCHITECTURE.md'));
-    expect((await json(res)).code).toBe('invalid_state');
+    expect(res.status).toBe(200);
+    expect(getDocument(p.id, '1-SYSTEM-ARCHITECTURE.md')).toMatchObject({ content: 'a', status: 'draft', upstreamChanged: false });
   });
 
   it('승인된 문서가 아니면 승인 취소는 409 invalid_state, 되돌릴 것이 없으면 nothing_to_undo', async () => {

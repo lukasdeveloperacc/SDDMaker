@@ -230,7 +230,7 @@ export function buildDocumentViews(input: {
       canUndo: d.previousContent !== null,
       running,
       generate: generateGate(d, ctx, input.running !== null),
-      approve: approveGate(d, ctx, running, links),
+      approve: approveGate(d, ctx, running || input.running?.kind === 'batch', links),
       links,
     };
   });
@@ -268,4 +268,16 @@ export function screenFiles(docs: DocumentRecord[]): string[] {
     .filter((d) => kindOf(d.path) === 'screen' && !missing.has(d.path))
     .map((d) => d.path)
     .sort();
+}
+
+// Batch derives its active set from the current PRODUCT, including reviewed drafts.
+export function batchPaths(docs: DocumentRecord[]): string[] {
+  const product = docs.find((d) => d.path === '0-PRODUCT.md');
+  const links = extractLinks(product?.content ?? '', 'requirements');
+  return [...BASE_DOCS, ...links.names.sort().map((n) => `requirements/${n}.md`), BASELINE_DOC];
+}
+export function batchInputDocsFor(path: string, docs: DocumentRecord[]): { path: string; content: string; status: DocumentRecord['status'] }[] {
+  const active = new Set(batchPaths(docs));
+  return docs.filter((d) => active.has(d.path) && d.content.trim() !== '' && stageOf(d.path) < stageOf(path))
+    .sort(byStageThenPath).map((d) => ({ path: d.path, content: d.content, status: d.status }));
 }

@@ -1,9 +1,11 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync, type Stats } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { PrInfoResponse } from '@/lib/contract';
 import { AgentError, RUN_TIMEOUT_MS, shellQuote, spawnCli } from './agents/exec';
 import { cliPath, prWorktreesDir, repoDir } from './env';
 import { ensureConnected, GithubError, viewRepo, type RepoInfo } from './github';
+import { repoBaselineCommit } from './repo-context';
 
 export const PR_TITLE = 'docs: SDD 문서 추가 (SDDMaker)';
 const PR_BODY = 'SDDMaker에서 승인된 SDD 문서를 올렸습니다.\n';
@@ -22,6 +24,27 @@ export class PrBlockedError extends Error {
 }
 
 export interface PrFile { path: string; content: string }
+
+export function prReviewToken(baselineCommit: string, files: PrFile[], overwrites: string[]): string {
+  return createHash('sha256').update(JSON.stringify({ baselineCommit, files, overwrites })).digest('hex');
+}
+
+async function getRemoteCommit(wt: string, branch: string, signal: AbortSignal): Promise<string> {
+  const lines: string[] = [];
+  const r = await spawnCli('git', ['-C', wt, ...credentialArgs(), 'ls-remote', 'origin', `refs/heads/${branch}`], {
+    signal, onLine: (l) => lines.push(l), timeoutMs: RUN_TIMEOUT_MS, timeoutError: prTimeout(),
+  });
+  if (r.code !== 0) throw new GithubError('pr_failed', '원격 저장소 기준 커밋을 확인하지 못했습니다');
+  const sha = /^([0-9a-f]{40,64})\s+refs\/heads\//m.exec(lines.join('\n'))?.[1];
+  if (!sha) throw new GithubError('pr_failed', '원격 저장소 기준 커밋을 확인하지 못했습니다');
+  return sha;
+}
+
+async function assertFresh(wt: string, branch: string, baseline: string, signal: AbortSignal): Promise<string> {
+  const remote = await getRemoteCommit(wt, branch, signal);
+  if (remote !== baseline) throw new GithubError('repo_stale', '원격 저장소가 검토한 기준 이후 변경되었습니다', [baseline, remote]);
+  return remote;
+}
 
 // 저장소 확인 + 기본 브랜치가 있는지. 빈 저장소면 PR을 만들 수 없다.
 async function repoForPr(repo: string, signal: AbortSignal): Promise<RepoInfo & { defaultBranch: string }> {
@@ -65,6 +88,9 @@ export async function prInfo(i: { projectId: number; repo: string; files: PrFile
   await ensureConnected();
   const info = await repoForPr(i.repo, i.signal);
   const clone = repoDir(i.projectId);
+  const baselineCommit = repoBaselineCommit(i.projectId);
+  const remoteSha = await getRemoteCommit(clone, info.defaultBranch, i.signal);
+  if (remoteSha !== baselineCommit) throw new GithubError('repo_stale', '원격 저장소가 검토한 기준 이후 변경되었습니다', [baselineCommit, remoteSha]);
   const paths = i.files.map((f) => f.path);
   const overwrites = paths.filter((p) => {
     const target = safeTarget(clone, p);
@@ -76,6 +102,9 @@ export async function prInfo(i: { projectId: number; repo: string; files: PrFile
     canPush: WRITE_PERMISSIONS.includes(info.viewerPermission),
     files: paths,
     overwrites,
+    baselineCommit,
+    remoteCommit: remoteSha,
+    reviewToken: prReviewToken(baselineCommit, i.files, overwrites),
   };
 }
 
@@ -117,7 +146,7 @@ async function remoteHasBranch(wt: string, branch: string, signal: AbortSignal):
   return lines.some((l) => l.trim() !== '');
 }
 
-export async function createPr(i: { projectId: number; repo: string; files: PrFile[]; signal: AbortSignal }): Promise<string> {
+export async function createPr(i: { projectId: number; repo: string; files: PrFile[]; reviewToken: string; confirmOverwrites: boolean; signal: AbortSignal }): Promise<string> {
   const { signal } = i;
   if (i.files.some((f) => SECRET_RE.test(f.content))) {
     throw new GithubError('pr_failed', '문서에 토큰으로 보이는 값이 있어 PR을 올리지 않았습니다');
@@ -130,6 +159,11 @@ export async function createPr(i: { projectId: number; repo: string; files: PrFi
   const user = await ghApiUser(signal);
   const clone = repoDir(i.projectId);
   if (!existsSync(clone)) throw new GithubError('pr_failed', '저장소 클론이 없습니다. 프로젝트를 다시 만드세요');
+  const baselineCommit = repoBaselineCommit(i.projectId);
+  const overwrites = i.files.filter((f) => { const target = safeTarget(clone, f.path); return target !== null && lstatOrNull(target) !== null; }).map((f) => f.path);
+  if (prReviewToken(baselineCommit, i.files, overwrites) !== i.reviewToken) throw new GithubError('review_changed', '검토 이후 내보낼 내용이 변경되었습니다');
+  if (overwrites.length && !i.confirmOverwrites) throw new GithubError('precondition', '기존 파일을 덮어쓰려면 확인이 필요합니다', overwrites);
+  await assertFresh(clone, info.defaultBranch, baselineCommit, signal);
 
   const worktrees = prWorktreesDir();
   for (const entry of readdirSync(worktrees)) {
@@ -141,7 +175,7 @@ export async function createPr(i: { projectId: number; repo: string; files: PrFi
   const branch = `sddmaker/docs-${stamp}`;
   const wt = path.join(worktrees, `${i.projectId}-${stamp}`);
   try {
-    await runGit(clone, ['-c', 'core.symlinks=false', 'worktree', 'add', '--detach', wt, 'HEAD'], signal);
+    await runGit(clone, ['-c', 'core.symlinks=false', 'worktree', 'add', '--detach', wt, baselineCommit], signal);
     writeFiles(wt, i.files);
     await runGit(wt, ['add', 'docs'], signal);
     const diff = await spawnCli('git', ['-C', wt, 'diff', '--cached', '--quiet'], { signal, timeoutMs: RUN_TIMEOUT_MS, timeoutError: prTimeout() });
@@ -149,6 +183,7 @@ export async function createPr(i: { projectId: number; repo: string; files: PrFi
     const author = COMMIT_USER(user.login, user.id);
     await runGit(wt, ['-c', `user.name=${author.name}`, '-c', `user.email=${author.email}`, 'commit', '-m', PR_TITLE], signal);
     if (await remoteHasBranch(wt, branch, signal)) throw new GithubError('pr_failed', BRANCH_EXISTS);
+    await assertFresh(wt, info.defaultBranch, baselineCommit, signal);
     const push = await spawnCli('git', ['-C', wt, ...credentialArgs(), 'push', 'origin', `HEAD:refs/heads/${branch}`], {
       signal,
       timeoutMs: RUN_TIMEOUT_MS,

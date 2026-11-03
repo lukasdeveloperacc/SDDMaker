@@ -1,6 +1,7 @@
+import { batchBusy } from '@/server/runtime';
 import { isAgentName, type AgentName } from '@/lib/contract';
-import { kindOf } from '@/server/doc-rules';
-import { deleteDocument, getDocument, updateDocument } from '@/server/db';
+import { kindOf, laterWithContent } from '@/server/doc-rules';
+import { deleteDocument, flagUpstream, getDocument, listDocuments, tx, updateDocument } from '@/server/db';
 import { documentView, resolveDocRef, viewOf } from '@/server/documents';
 import { apiError, json, readJson } from '@/server/http';
 
@@ -11,8 +12,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string; pat
   const { id, path } = await ctx.params;
   const ref = resolveDocRef(id, path);
   if (ref instanceof Response) return ref;
+  if (batchBusy(ref.projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
 
   const body = await readJson(req);
+  if (batchBusy(ref.projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   if (!body) return apiError(400, 'invalid_input', '요청 형식이 잘못되었습니다');
   if (typeof body.content !== 'string') return apiError(400, 'invalid_input', '본문은 글이어야 합니다');
   const screen = kindOf(path) === 'screen';
@@ -54,7 +57,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string; pat
     patch.agent = agent;
     patch.upstreamChanged = false;
   }
-  updateDocument(ref.projectId, ref.path, patch);
+  tx(() => {
+    updateDocument(ref.projectId, ref.path, patch);
+    if (cur.content !== body.content) flagUpstream(ref.projectId, laterWithContent(ref.path, listDocuments(ref.projectId)));
+  });
   return json({ document: viewOf(ref) });
 }
 
@@ -63,6 +69,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string;
   const { id, path } = await ctx.params;
   const ref = resolveDocRef(id, path);
   if (ref instanceof Response) return ref;
+  if (batchBusy(ref.projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   const view = documentView(ref.projectId, ref.path);
   if (!view) return apiError(404, 'not_found', '문서를 찾을 수 없습니다');
   if (!view.missingFromList) return apiError(409, 'invalid_state', '목록에서 빠진 문서만 삭제할 수 있습니다');

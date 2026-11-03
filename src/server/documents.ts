@@ -1,7 +1,5 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
-  BASELINE_DOC,
   DOC_PATH_RE,
   type DocumentView,
   type Interview,
@@ -19,9 +17,13 @@ import {
 import { getRun } from '@/server/runtime';
 import { apiError, parseId } from '@/server/http';
 import { repoDir } from '@/server/env';
-import { AgentError, childEnv } from './agents/exec';
-import { buildDocumentPrompt } from './prompts';
+import { AgentError } from './agents/exec';
+import { buildDocumentPrompt, repoEvidencePrompt } from './prompts';
+import { readRepoContext } from './repo-context';
+import { batchView } from './batch';
 import {
+  batchPaths,
+  batchInputDocsFor,
   buildDocumentViews,
   computeMissing,
   exportGate,
@@ -50,7 +52,15 @@ export function projectDetail(projectId: number): ProjectDetail | null {
     hasDesign: project.designMd !== null && project.designMd.trim() !== '',
     running,
   });
-  return { project, interview, documents, running, exportGate: exportGate(documents) };
+  let repoContext = null;
+  if (project.repo) {
+    try {
+      repoContext = readRepoContext(projectId, batchPaths(listDocuments(projectId)));
+    } catch {
+      // Unavailable clone: do not fabricate absent originals.
+    }
+  }
+  return { project, interview, documents, running, batch: batchView(projectId), repoContext, exportGate: exportGate(documents) };
 }
 
 export function documentView(projectId: number, path: string): DocumentView | null {
@@ -104,36 +114,31 @@ export function runDirOf(projectId: number): string | undefined {
   return dir;
 }
 
-// 기준 문서에 적을 현재 커밋. 클론 폴더가 있다는 것은 runDirOf가 확인했다.
-function headCommit(projectId: number): string {
-  // shortcut: execFileSync blocks the server up to 15 s, switch to async if prompts become slow
-  return execFileSync('git', ['-C', repoDir(projectId), 'rev-parse', 'HEAD'], {
-    env: childEnv('git'),
-    timeout: 15_000,
-    encoding: 'utf8',
-  }).trim();
+export function generationRepoEvidence(projectId: number): string {
+  return getProject(projectId)?.repo ? repoEvidencePrompt(readRepoContext(projectId, batchPaths(listDocuments(projectId)))) : '';
 }
 
 // 생성 프롬프트 조립. feedback이 있으면 현재 본문을 함께 넣는다.
-export function generationPrompt(projectId: number, path: string, feedback?: string): string {
+export function generationPrompt(projectId: number, path: string, feedback?: string, batch = false): string {
   const project = getProject(projectId);
   if (!project) throw new Error(`project ${projectId} not found`);
   const docs = listDocuments(projectId);
   const rec = getInterview(projectId);
   const screens = screenFiles(docs);
   const current = feedback === undefined ? undefined : docs.find((d) => d.path === path)?.content;
+  const context = project.repo ? readRepoContext(projectId, [path, ...batchPaths(docs).filter((p) => p !== path)]) : undefined;
   return buildDocumentPrompt({
     path,
     idea: project.idea,
     summary: rec?.status === 'approved' ? rec.summary : null,
     designMd: project.designMd,
-    inputDocs: inputDocsFor(path, docs),
+    inputDocs: batch ? batchInputDocsFor(path, docs) : inputDocsFor(path, docs),
     screenNames: screens.map((p) => nameOf(p)),
     screenFiles: screens,
     current,
     feedback,
     ...(project.repo
-      ? { repo: { name: project.repo, baseline: path === BASELINE_DOC ? headCommit(projectId) : undefined } }
+      ? { repo: { name: project.repo, baseline: context!.baselineCommit }, repoContext: context }
       : {}),
   });
 }

@@ -15,8 +15,9 @@ export function exportFiles(i: {
   designMd: string | null;
   docs: { path: string; content: string }[];
   rules: string;
+  originalRules?: string | null;
 }): { path: string; content: string }[] {
-  const files = [{ path: 'docs/AGENTS.md', content: i.rules }];
+  const files = [{ path: 'docs/AGENTS.md', content: i.originalRules ?? i.rules }];
   if (i.designMd !== null && i.designMd.trim() !== '') files.push({ path: 'docs/2-DESIGN.md', content: i.designMd });
   for (const d of i.docs) files.push({ path: `docs/${d.path}`, content: d.content });
   return files;
@@ -26,6 +27,7 @@ export async function buildExportZip(i: {
   designMd: string | null;
   docs: { path: string; content: string }[];
   rules: string;
+  originalRules?: string | null;
 }): Promise<ArrayBuffer> {
   const zip = new JSZip();
   zip.folder('docs');

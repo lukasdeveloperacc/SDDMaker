@@ -153,9 +153,9 @@ export function DocActions({ projectId, doc, disabled, refresh, onApproved }: Pr
             승인 취소
           </Button>
         )}
-        {doc.status === 'approved' && doc.upstreamChanged && (
+        {doc.upstreamChanged && (
           <Button variant="utility" disabled={locked} onClick={() => void acknowledge()}>
-            확인
+            확인했습니다
           </Button>
         )}
         {doc.missingFromList && (

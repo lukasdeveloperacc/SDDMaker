@@ -30,6 +30,8 @@ export async function POST(req: Request) {
   const designMd = typeof body.designMd === 'string' && body.designMd.trim() !== '' ? body.designMd : null;
 
   const rawRepo = typeof body.repo === 'string' ? body.repo.trim() : '';
+  if (body.mode !== undefined && body.mode !== 'existing' && body.mode !== 'new') return apiError(400, 'invalid_input', '프로젝트 유형을 확인하세요');
+  if ((body.mode === 'existing' && rawRepo === '') || (body.mode === 'new' && rawRepo !== '')) return apiError(400, 'invalid_input', '프로젝트 유형과 저장소 입력을 확인하세요');
   if (rawRepo === '') {
     if (name === '' || idea === '') return apiError(400, 'invalid_input', '이름과 아이디어를 입력하세요');
     return json({ project: createProject({ name, idea, designMd }) }, 201);

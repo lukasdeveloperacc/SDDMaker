@@ -33,6 +33,8 @@ function iv(over: Partial<Interview>): Interview {
 function detail(interview: Interview | null, documents: DocumentView[]): ProjectDetail {
   return {
     project: { id: 1, name: 'p', idea: 'i', designMd: null, createdAt: '', repo: null },
+    batch: null,
+    repoContext: null,
     interview,
     documents,
     running: null,

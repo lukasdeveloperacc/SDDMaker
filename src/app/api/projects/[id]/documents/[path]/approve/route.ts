@@ -1,6 +1,7 @@
+import { batchBusy } from '@/server/runtime';
 import { getProject, tx, insertEmptyDocuments, updateDocument } from '@/server/db';
 import { resolveDocRef, viewOf } from '@/server/documents';
-import { gateError, json } from '@/server/http';
+import { apiError, gateError, json } from '@/server/http';
 import type { ApproveResponse } from '@/lib/contract';
 
 export const runtime = 'nodejs';
@@ -10,6 +11,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string; p
   const { id, path } = await ctx.params;
   const ref = resolveDocRef(id, path);
   if (ref instanceof Response) return ref;
+  if (batchBusy(ref.projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   const view = viewOf(ref);
   if (!view.approve.ok) return gateError(view.approve);
 

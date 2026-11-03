@@ -13,12 +13,17 @@ const info = (over: Partial<PrInfoResponse> = {}): PrInfoResponse => ({
   canPush: true,
   files: ['docs/0-PRODUCT.md', 'docs/changes/001-baseline.md'],
   overwrites: [],
+  baselineCommit: 'base123',
+  remoteCommit: 'base123',
+  reviewToken: 'token1',
   ...over,
 });
 
 function detail(repo: string | null, gateOk = true): ProjectDetail {
   return {
     project: { id: 7, name: 'p', idea: 'i', designMd: null, createdAt: '', repo },
+    batch: null,
+    repoContext: repo ? { baselineCommit: 'base123', originals: [{ path: 'docs/AGENTS.md', originalText: null, omissionReason: 'instruction_file' }] } : null,
     interview: null,
     documents: [],
     running: null,
@@ -86,13 +91,14 @@ async function flush() {
 
 describe('prErrorView', () => {
   it('push 권한 없음은 안내 문구와 비활성 표시, 연결 문제는 설정 링크를 붙인다', () => {
-    expect(prErrorView(new ApiRequestError(409, 'no_push_permission', 'x'))).toEqual({ message: NO_PUSH_TEXT, noPush: true, connect: false });
+    expect(prErrorView(new ApiRequestError(409, 'no_push_permission', 'x'))).toMatchObject({ message: NO_PUSH_TEXT, noPush: true, connect: false });
     expect(prErrorView(new ApiRequestError(409, 'github_not_connected', '로그인 필요')).connect).toBe(true);
     expect(prErrorView(new ApiRequestError(409, 'gh_not_found', 'gh 없음')).connect).toBe(true);
   });
 
   it('그 밖의 오류는 서버 메시지를 그대로 쓴다', () => {
-    expect(prErrorView(new ApiRequestError(502, 'pr_failed', '다시 시도하세요'))).toEqual({ message: '다시 시도하세요', noPush: false, connect: false });
+    expect(prErrorView(new ApiRequestError(502, 'pr_failed', '다시 시도하세요'))).toMatchObject({ message: '다시 시도하세요', noPush: false, connect: false });
+    expect(prErrorView(new ApiRequestError(409, 'repo_stale', 'stale')).stale).toBe(true);
     expect(prErrorView(new Error('x')).message).toBe('요청을 처리하지 못했습니다.');
   });
 });
@@ -124,6 +130,16 @@ describe('ExportPanel PR', () => {
     expect(button('PR 올리기')?.disabled).toBe(true);
   });
 
+  it('repo_stale GET shows preserved-draft recovery, keeps ZIP available, and does not retry the stale preview', async () => {
+    fetchMock.mockResolvedValueOnce(json(409, errorBody('repo_stale', 'old baseline')));
+    await render(detail('octo/app'));
+    await flush();
+    expect(host.textContent).toContain('현재 프로젝트의 초안은 보존되어 있습니다');
+    expect(host.querySelector('a[href="/"]')?.textContent).toBe('새 프로젝트 만들기');
+    expect(host.querySelector('a[href="/api/projects/7/export"]')).not.toBeNull();
+    expect(button('다시 시도')).toBeUndefined();
+  });
+
   it('내보내기 조건이 막혀 있으면 권한을 확인하지 않는다', async () => {
     await render(detail('octo/app', false));
     await flush();
@@ -145,18 +161,23 @@ describe('ExportPanel PR', () => {
     await flush();
     await click(button('PR 올리기')!);
     expect(host.querySelector('dialog')?.textContent).toContain('docs/0-PRODUCT.md');
+    expect(host.querySelector('dialog')?.textContent).toContain('base123');
+    expect(host.querySelector('dialog')?.textContent).toContain('docs/AGENTS.md');
     expect(host.querySelector('dialog')?.textContent).not.toContain('덮어쓸 파일 없음');
+    expect(dialogButton('PR 올리기')?.disabled).toBe(true);
+    await click(host.querySelector<HTMLInputElement>('dialog input[type="checkbox"]')!);
 
     fetchMock.mockResolvedValueOnce(json(201, { url: 'https://github.com/octo/app/pull/1' }));
     await click(dialogButton('PR 올리기')!);
     await flush();
     expect(fetchMock.mock.calls[1][0]).toBe('/api/projects/7/pr');
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ reviewToken: 'token1', confirmOverwrites: true });
     expect(host.querySelector('a[href="https://github.com/octo/app/pull/1"]')).not.toBeNull();
-    // 성공 후에는 닫기가 주 동작이고, 덮어쓸 파일 목록은 숨긴다.
+    // 성공 후에도 미리보기의 올릴 파일 목록은 남아 있고 닫기가 주 동작이다.
     expect(dialogButton('닫기')?.className).toContain('btn-primary');
     expect(dialogButton('새 브랜치로 PR 다시 올리기')?.className).toContain('btn-secondary');
-    expect(host.querySelector('dialog')?.textContent).not.toContain('docs/0-PRODUCT.md');
+    expect(host.querySelector('dialog')?.textContent).toContain('docs/0-PRODUCT.md');
   });
 
   it('덮어쓸 파일이 없으면 그 문구를 보여 준다', async () => {
@@ -177,6 +198,40 @@ describe('ExportPanel PR', () => {
     await flush();
     expect(host.querySelector('dialog')?.textContent).toContain('push에 실패했습니다.');
     expect(dialogButton('다시 시도')?.disabled).toBe(false);
+  });
+
+  it('review_changed forces a fresh preview before the dialog can be reopened', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, info({ reviewToken: 'old-token' })));
+    await render(detail('octo/app'));
+    await flush();
+    await click(button('PR 올리기')!);
+    fetchMock.mockResolvedValueOnce(json(409, errorBody('review_changed', 'stale review')));
+    await click(dialogButton('PR 올리기')!);
+    await flush();
+    expect(host.querySelector('dialog')?.textContent).toContain('최신 미리보기를 다시 확인');
+    fetchMock.mockResolvedValueOnce(json(200, info({ reviewToken: 'new-token' })));
+    await click(dialogButton('최신 미리보기 다시 확인')!);
+    await flush();
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/projects/7/pr');
+    await click(button('PR 올리기')!);
+    fetchMock.mockResolvedValueOnce(json(201, { url: 'https://github.com/octo/app/pull/2' }));
+    await click(dialogButton('PR 올리기')!);
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ reviewToken: 'new-token', confirmOverwrites: false });
+  });
+
+  it('disables PR creation when the refreshed preview reports a stale baseline', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, info()));
+    await render(detail('octo/app'));
+    await flush();
+    await click(button('PR 올리기')!);
+    fetchMock.mockResolvedValueOnce(json(409, errorBody('review_changed', 'stale review')));
+    await click(dialogButton('PR 올리기')!);
+    await flush();
+    fetchMock.mockResolvedValueOnce(json(409, errorBody('repo_stale', 'stale baseline')));
+    await click(dialogButton('최신 미리보기 다시 확인')!);
+    await flush();
+    expect(button('PR 올리기')?.disabled).toBe(true);
+    expect(host.textContent).toContain('새 프로젝트 만들기');
   });
 
   it('권한이 없다고 응답하면 확인 버튼을 끈다', async () => {

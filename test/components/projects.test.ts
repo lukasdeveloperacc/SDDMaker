@@ -41,7 +41,7 @@ describe('checkProjectInput', () => {
 describe('buildProjectBody', () => {
   it('저장소가 없으면 기존 본문과 같고 repo 키가 없다', () => {
     const body = buildProjectBody(' SDD ', ' 아이디어 ', '# 디자인\n', '  ');
-    expect(body).toEqual({ name: 'SDD', idea: '아이디어', designMd: '# 디자인\n' });
+    expect(body).toEqual({ name: 'SDD', idea: '아이디어', designMd: '# 디자인\n', mode: 'new' });
     expect(Object.keys(body)).not.toContain('repo');
   });
 
@@ -51,7 +51,14 @@ describe('buildProjectBody', () => {
       idea: '',
       designMd: '',
       repo: 'owner/repo',
+      mode: 'existing',
     });
+  });
+
+  it('new mode does not submit a repository retained from a previous choice', () => {
+    expect(checkProjectInput('name', 'idea', 'owner/repo', 'new')).toBeNull();
+    expect(buildProjectBody('name', 'idea', '', 'owner/repo', 'new')).toEqual({ name: 'name', idea: 'idea', designMd: '', mode: 'new' });
+    expect(checkProjectInput('', '', '', 'existing')).toEqual({ repo: '기존 프로젝트에는 GitHub 저장소가 필요합니다.' });
   });
 });
 
@@ -109,7 +116,7 @@ describe('프로젝트 생성 요청 (fetch 가짜)', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: '', idea: '', designMd: '', repo: 'owner/repo' }) }),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: '', idea: '', designMd: '', mode: 'existing', repo: 'owner/repo' }) }),
     );
     expect(err).toBeInstanceOf(ApiRequestError);
     expect(createErrorView((err as ApiRequestError).code, (err as ApiRequestError).message, true)).toMatchObject({

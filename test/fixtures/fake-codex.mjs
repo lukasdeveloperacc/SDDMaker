@@ -2,7 +2,7 @@
 // 가짜 Codex CLI. 이벤트 모양은 docs/1-SYSTEM-ARCHITECTURE.md "외부 연동"의 확인된 형식을 따른다.
 import { createInterface } from 'node:readline';
 import fs from 'node:fs';
-import { answerFor, envReport, logout, mode, newId, readStdin, recordPid, stderrFlood } from './fake-lib.mjs';
+import { answerFor, envReport, logout, mode, newId, readStdin, recordPid, scenarioTarget, stderrFlood } from './fake-lib.mjs';
 
 const argv = process.argv.slice(2);
 // 이벤트 루프가 비지 않게 타이머를 붙여 둔다 (그러지 않으면 Node가 자식을 그냥 끝낸다).
@@ -50,6 +50,12 @@ async function exec() {
   }
 
   const emit = (obj) => process.stdout.write(JSON.stringify(obj) + '\n');
+  const target = scenarioTarget(stdin);
+  if (process.env.FAKE_CORE_SCENARIOS === '1' && target === process.env.FAKE_SCENARIO_HANG_PATH) await hang();
+  if (process.env.FAKE_CORE_SCENARIOS === '1' && target === process.env.FAKE_SCENARIO_FAIL_PATH) {
+    emit({ type: 'turn.failed', error: { message: 'fake scenario failure' } });
+    process.exit(1);
+  }
   const resumeAt = argv.indexOf('resume');
   if (resumeAt !== -1 && m === 'resume_fail') {
     emit({ type: 'error', message: 'no session' });

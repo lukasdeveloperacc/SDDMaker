@@ -1,3 +1,4 @@
+import { batchBusy } from '@/server/runtime';
 import { flagUpstream, listDocuments, tx, updateDocument } from '@/server/db';
 import { resolveDocRef, viewOf } from '@/server/documents';
 import { laterWithContent } from '@/server/doc-rules';
@@ -10,6 +11,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string; p
   const { id, path } = await ctx.params;
   const ref = resolveDocRef(id, path);
   if (ref instanceof Response) return ref;
+  if (batchBusy(ref.projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   const view = viewOf(ref);
   if (view.running) return apiError(409, 'busy', '이 문서가 실행 중입니다');
   if (view.status !== 'approved') return apiError(409, 'invalid_state', '승인된 문서만 승인을 취소할 수 있습니다');

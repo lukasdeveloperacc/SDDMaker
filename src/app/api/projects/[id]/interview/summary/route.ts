@@ -1,10 +1,11 @@
+import { batchBusy } from '@/server/runtime';
 import { buildInterviewRebuildPrompt, buildInterviewSummaryPrompt } from '@/server/prompts';
 import { getProject, getInterview, listMessages, tx, updateInterview } from '@/server/db';
 import { acquireRun, getRun } from '@/server/runtime';
 import { apiError, json, parseId, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
 import { runTurn, interviewOf } from '@/server/interview-turn';
-import { runDirOf } from '@/server/documents';
+import { generationRepoEvidence, runDirOf } from '@/server/documents';
 import { stripFence } from '@/server/doc-rules';
 
 export const runtime = 'nodejs';
@@ -34,10 +35,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const dir = runDirOf(id);
       const r = await runTurn({
         agent,
-        prompt: buildInterviewSummaryPrompt(project.repo),
+        prompt: buildInterviewSummaryPrompt(project.repo) + '\n' + generationRepoEvidence(id),
         sessionId,
         rebuildPrompt: () =>
-          buildInterviewRebuildPrompt(project.idea, listMessages(rec.id), { kind: 'summary' }, project.repo),
+          buildInterviewRebuildPrompt(project.idea, listMessages(rec.id), { kind: 'summary' }, project.repo) + '\n' + generationRepoEvidence(id),
         onDelta,
         signal,
         repoDir: dir,
@@ -61,7 +62,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const id = parseId((await ctx.params).id);
   if (id === null) return apiError(404, 'not_found', '프로젝트를 찾을 수 없습니다');
+  if (batchBusy(id)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   const body = await readJson(req);
+  if (batchBusy(id)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   if (!body) return apiError(400, 'invalid_input', '요청 형식이 올바르지 않습니다');
   if (typeof body.summary !== 'string') return apiError(400, 'invalid_input', '요약을 입력하세요');
   if (!getProject(id)) return apiError(404, 'not_found', '프로젝트를 찾을 수 없습니다');

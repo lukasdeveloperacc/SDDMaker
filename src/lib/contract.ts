@@ -5,7 +5,7 @@ export type InterviewStatus = 'active' | 'summarized' | 'approved' | 'skipped';
 export type DocStatus = 'empty' | 'draft' | 'approved';
 export type MessageRole = 'agent' | 'user';
 export type DocKind = 'base' | 'requirement' | 'screen' | 'change';
-export type RunKind = 'interview' | 'document' | 'annotations' | 'pr';
+export type RunKind = 'interview' | 'document' | 'annotations' | 'pr' | 'batch';
 export const LOGIN_TARGETS = ['claude', 'codex', 'github'] as const;
 export type LoginTarget = (typeof LOGIN_TARGETS)[number];
 
@@ -29,6 +29,8 @@ export type HttpErrorCode =
   | 'repo_not_found'   // 404 GitHub 저장소를 찾을 수 없음
   | 'clone_failed'     // 502 저장소 복제 실패(시간 초과 포함)
   | 'no_push_permission' // 409 저장소에 푸시 권한 없음
+  | 'repo_stale'       // 409 기준 커밋 이후 원격 변경
+  | 'review_changed'   // 409 검토 이후 내용 변경
   | 'pr_failed';       // 502 푸시·PR 생성 실패, 시간 초과, 비밀값 검출, 같은 분 브랜치 충돌
 export interface ApiError { code: HttpErrorCode; message: string; items?: string[] }
 
@@ -62,8 +64,27 @@ export interface DocumentView {
   approve: Gate;
   links: { names: string[]; invalid: string[] } | null; // 0-PRODUCT.md(requirements), 4-USERFLOW.md(screens)만, 현재 본문 기준
 }
+export interface RepoContext {
+  baselineCommit: string;
+  originals: Array<{ path: string; originalText: string | null; omissionReason: null | 'not_found' | 'instruction_file' | 'symlink' | 'non_text' | 'file_limit' | 'total_limit' | 'redacted' }>;
+}
+export interface BatchView {
+  state: 'idle' | 'running' | 'completed' | 'partial';
+  currentPath: string | null;
+  completedPaths: string[];
+  remainingPaths: string[];
+  error: { code: AgentErrorCode | 'invalid_links'; message: string; path?: string } | null;
+  reviewToken: string;
+}
+export type BatchEvent =
+  | { event: 'progress'; data: { batch: BatchView } }
+  | { event: 'done'; data: { batch: BatchView } }
+  | { event: 'delta'; data: { path: string; text: string } }
+  | { event: 'error'; data: { code: AgentErrorCode | 'invalid_links'; message: string; path?: string } };
 export interface ProjectDetail {
   project: Project;
+  batch: BatchView | null;
+  repoContext: RepoContext | null;
   interview: Interview | null;
   documents: DocumentView[];   // stage 오름차순, 같은 stage는 path 오름차순
   running: { kind: RunKind; path: string | null } | null;
@@ -99,7 +120,7 @@ export interface DocumentResponse { document: DocumentView }
 export interface ApproveResponse { document: DocumentView; requirements?: string[]; screens?: string[] }
 export interface UnapproveResponse { document: DocumentView; flagged: string[] }
 export interface PromptPreviewResponse { prompt: string }
-export interface PrInfoResponse { repo: string; defaultBranch: string; canPush: boolean; files: string[]; overwrites: string[] } // files: 'docs/…'
+export interface PrInfoResponse { repo: string; defaultBranch: string; canPush: boolean; files: string[]; overwrites: string[]; baselineCommit: string; remoteCommit: string; reviewToken: string } // files: 'docs/…'
 export interface PrCreateResponse { url: string }
 
 // 서버 내부 레코드 (DB 모듈이 camelCase로 돌려줌). Frontend는 쓰지 않는다.

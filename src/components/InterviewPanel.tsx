@@ -71,7 +71,7 @@ export function InterviewPanel({
   const [error, setError] = useState<string | null>(null);
   const [flagged, setFlagged] = useState<string[]>([]);
   const run = useAgentRun();
-  const locked = busy || run.running;
+  const locked = busy || run.running || detail.running?.kind === 'batch';
 
   // 답변이 저장되어 마지막 메시지가 user가 되면 입력란을 비운다 (보내기 실패로 저장되지 않았으면 남긴다).
   useEffect(() => {
@@ -137,6 +137,10 @@ export function InterviewPanel({
           {interview?.status === 'active' && (
             <Notice tone="warn">첫 질문을 만들지 못했습니다. 다시 시작해 주세요.</Notice>
           )}
+          <aside className="notice notice-info" aria-label="인터뷰에서 다룰 내용">
+            <strong>인터뷰에서 다룰 내용</strong>
+            <p className="caption">대상 사용자, 구체적인 문제, MVP 포함·제외 범위, 우선순위와 의존성, 측정 가능한 성공 기준, 미정인 가정을 하나씩 확인합니다.</p>
+          </aside>
           <AgentPicker value={startAgent} onChange={setStartAgent} disabled={locked} />
           <div className="row">
             <Button variant="primary" disabled={locked} onClick={() => void start()}>
@@ -200,6 +204,19 @@ export function InterviewPanel({
     body = (
       <div className="stack">
         <p className="caption">대화를 요약했습니다. 고친 뒤 승인하면 0-PRODUCT.md 단계가 열립니다.</p>
+        <aside className="notice notice-info" aria-label="요약에 포함할 내용">
+          <strong>요약 확인 항목</strong>
+          <ul className="caption">
+            <li>대상 사용자</li>
+            <li>구체적인 문제와 사용 사례</li>
+            <li>MVP에 포함할 범위</li>
+            <li>MVP에서 제외할 범위</li>
+            <li>우선순위와 의존성</li>
+            <li>측정 가능한 성공 기준</li>
+            <li>아직 정하지 못한 가정</li>
+          </ul>
+          <p className="caption" style={{ marginBottom: 0 }}>모르는 내용은 추측하지 말고 미정으로 표시하세요.</p>
+        </aside>
         <MarkdownEditor
           label="인터뷰 요약"
           value={summaryText}

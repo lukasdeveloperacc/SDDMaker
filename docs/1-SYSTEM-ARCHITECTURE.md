@@ -1,6 +1,6 @@
 # 시스템 아키텍처
 
-> 상태: 구현됨 — 자동 테스트·가짜 CLI 검증 완료. 실제 구독 로그인 검증은 남아 있다 ([changes/001-mvp.md](changes/001-mvp.md)).
+> 상태: 기존 구조는 구현됨 — 기존 자동 테스트·가짜 CLI 결과는 [changes/001-mvp.md](changes/001-mvp.md)에 기록한다. 핵심 시나리오 서버 확장은 표적 자동 검증을 통과했다. UI도 컴포넌트 검증을 통과했으며 전체 테스트·타입 검사·린트·빌드는 통과했다. 브라우저 조작은 문서 확정 시점에 미검증이다 ([changes/014-core-scenarios.md](changes/014-core-scenarios.md)). 실제 구독 로그인·모델 생성은 별도 확인이다.
 
 ## 기술 스택
 
@@ -50,7 +50,7 @@ flowchart TD
 - **에이전트 모듈**: CLI별 어댑터(`claude`, `codex`)가 실행·상태 확인·로그인을 같은 형태로 제공한다. 동작 규칙은 [requirements/agent-cli.md](requirements/agent-cli.md), CLI별 실제 명령은 아래 [외부 연동](#외부-연동-에이전트-cli).
 - **프롬프트**: 인터뷰와 문서 종류별 프롬프트, 화면 주석 요청 템플릿은 코드에 고정한다.
 - **구현 경로**: 화면은 `src/app/`·`src/components/`, API는 `src/app/api/`, DB는 `src/server/db/`, CLI 어댑터는 `src/server/agents/`, 실행 잠금·종료 정리는 `src/server/runtime.ts`, 프롬프트는 `src/server/prompts.ts`에 있다.
-- **문서 규칙**: 생성 프롬프트에 넣고 zip에 담는 문서 규칙은 이 저장소의 [`docs/AGENTS.md`](AGENTS.md)를 실행 시 그대로 읽는다. 사본을 따로 두지 않는다.
+- **문서 규칙**: 생성 프롬프트의 앱 규칙은 이 저장소의 [`docs/AGENTS.md`](AGENTS.md)를 실행 시 읽는다. ZIP/PR은 저장소 기준 커밋의 원래 규칙을 보존하고, 없는 경우만 앱 규칙을 넣는다. 원본 규칙은 생성 지시가 아니다.
 
 ## 데이터 흐름
 
@@ -135,7 +135,7 @@ flowchart TD
 - push는 git에 명령 단위로 `gh auth git-credential`을 자격 증명 도우미로 지정해 실행한다. 전역 git 설정을 바꾸지 않는다.
 - 토큰은 `--insecure-storage`로 `gh-home`의 파일에 저장된다. `claude-home`·`codex-home`과 같은 수준의 노출이며, 앱은 토큰을 읽지 않는다 ([위험](requirements/github.md#규칙)).
 - 클론은 `<데이터 폴더>/repos/<프로젝트 id>`에 두고(임시 `.tmp-<uuid>`에 받은 뒤 이름 변경, 15분 넘은 임시 폴더는 다음 생성 때 정리), 저장소 프로젝트의 에이전트 작업 폴더로 쓴다. PR 커밋은 `<데이터 폴더>/pr-worktrees/<프로젝트 id>-<시각>`의 detached worktree에서 만든다. 클론과 worktree 모두 `core.symlinks=false`다.
-- 실행 잠금 종류에 `pr`을 추가했다. PR은 올리기 요청(POST) 시점의 문서로 만들고, 진행 중에 문서를 고쳐도 그 PR은 바뀌지 않는다. PR 중에는 인터뷰(승인·건너뛰기·승인 취소 포함)·문서 생성·주석·다른 PR이 `busy`(409)이고, 문서 직접 저장·승인은 막지 않는다. 프로젝트 삭제는 진행 중인 PR을 취소하고, 5초 안에 멈추지 않을 때만 `busy`로 거절한다.
+- 실행 잠금 종류에 `pr`을 추가했다. PR 미리보기/POST는 잠금을 얻고 스냅샷을 읽는다. POST 스냅샷이 미리보기의 검토 토큰과 일치해야 하며, 진행 중에 문서를 고쳐도 그 PR 스냅샷은 바뀌지 않는다. PR 중에는 인터뷰(승인·건너뛰기·승인 취소 포함)·문서 생성·주석·다른 PR이 `busy`(409)이고, 문서 직접 저장·승인은 막지 않는다. 프로젝트 삭제는 진행 중인 PR을 취소하고, 5초 안에 멈추지 않을 때만 `busy`로 거절한다.
 
 ## 보안
 
@@ -221,3 +221,15 @@ Claude는 콜백에 접근할 수 없는 환경에서 반환 코드를 요구할
 Codex의 Linux read-only sandbox는 Docker 호스트의 namespace·seccomp 정책에 따라 실행이 제한될 수 있다. 이번 Docker Desktop 검증에서는 실제 sandbox 명령이 bubblewrap namespace 권한 오류로 실패했다. 컨테이너에도 기존 `--sandbox read-only`를 유지하며, privileged 모드나 권한 우회는 기본 구성에 넣지 않는다. 이 환경에서는 Claude를 사용하거나 Codex를 호스트 실행에서 사용한다. 실제 구독 인증·모델 생성은 이미지 기동·가짜 CLI 검증과 별도다.
 
 구성 근거: [Next.js standalone 출력](https://nextjs.org/docs/app/api-reference/config/next-config-js/output), [Claude 컨테이너 로그인](https://code.claude.com/docs/en/authentication#log-in-to-claude-code), [Codex 헤드리스 로그인](https://learn.chatgpt.com/docs/auth#login-on-headless-devices), [Codex 컨테이너 sandbox](https://learn.chatgpt.com/docs/agent-approvals-security#run-codex-in-dev-containers).
+
+## 핵심 시나리오 구조 (014)
+
+- API 계약의 기준은 [`src/lib/contract.ts`](../src/lib/contract.ts)다. 프로젝트 생성의 선택적 `mode`, 상세의 `batch`·`repoContext`, 별도 `BatchEvent`, PR의 기준/원격 SHA·검토 토큰을 사용한다. 요청/오류와 승인 기준은 [project](requirements/project.md), [documents](requirements/documents.md), [github](requirements/github.md)에 둔다.
+- 저장소 전체 초안은 단일 서버 순차 실행 서비스와 기존 프로젝트 잠금·CLI·SSE·SQLite 문서 행을 재사용한다. `RunKind`에 `batch`를 추가하되 일반 `RunEvent`와 배치 이벤트는 구분한다. 잠금을 먼저 얻고 입력 스냅샷을 읽으며, 비동기 요청 파싱 뒤 실제 쓰기 때도 입력 변경 잠금을 검사한다. 배치 중 문서 저장/되돌리기/승인/승인 취소/확인/주석/삭제, 인터뷰·디자인 변경은 모두 `busy`다. 프로젝트 삭제는 기존 취소 후 종료 대기를 유지한다.
+- 배치 내부에서만 유효한 선행 초안을 입력으로 쓴다. PRODUCT 현재 본문의 활성 요구사항 집합을 행 확장·선행 입력·작업 목록·기준선 입력에서 공통으로 사용한다. 일반 승인 기반 생성과 `missingFromList`/내보내기 규칙은 유지한다.
+- 문서 하나가 유효하게 완료될 때마다 원자적으로 `draft`를 저장한다. 실패·취소·연결 끊김은 활성 문서의 부분 출력을 저장하지 않는다. 런타임의 현재 경로·오류는 메모리에만 있고, 재시작 후 진행은 저장된 본문에서 다시 계산한다. 새 작업 큐·이력 테이블·마이그레이션은 없다.
+- 저장소 문맥은 기준 커밋의 추적 Git blob에서 결정적 제한으로 읽는다. 생성 도구의 읽기 범위 제한을 보증하는 구조가 아니며, 원문은 지시문으로 실행하지 않는다. 원문 비교의 제한/누락/가림은 [GitHub R5](requirements/github.md#r5r6-코드-근거원문-보존pr-검토)를 따른다.
+- ZIP과 PR은 [`src/server/export.ts`](../src/server/export.ts)의 공통 `exportFiles`에서 원래 `docs/AGENTS.md`를 보존한다. 안전하게 읽을 수 없는 원본 규칙은 `export_blocked/items`로 중단하고, 원본이 없을 때만 앱 규칙을 넣는다. 원본의 UTF-8 BOM과 줄바꿈도 보존한다.
+- PR 미리보기와 push 직전에 인증된 git으로 기본 브랜치 SHA를 확인한다. 확인한 클론 기준 SHA에서 worktree를 만들고, 검토 토큰과 덮어쓰기 명시 확인을 검증한다. 원격 차이는 `repo_stale` 409, 조회 불능은 `pr_failed` 502다. 클론 fetch/reset/rebase는 하지 않는다. 미리보기·POST·push 직전에 최신성을 확인한다. 마지막 확인 뒤 원격이 바뀔 수 있어 원자적 원격 잠금을 주장하지 않는다.
+
+서버 표적 자동 검증은 CORE 11파일/196건과 최종 배치 15건, REPO 5파일/65건을 통과했다. UI 컴포넌트 14파일/118건 및 전체 테스트 43파일/568건, 타입 검사·린트·빌드가 종료 0이다. 브라우저 조작은 문서 확정 시점에 미검증이다. 이 결과는 실제 AI 출력 품질·실계정 GitHub push 검증 증거가 아니다.

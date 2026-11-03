@@ -62,7 +62,7 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
     setState((prev) => ({ ...localFor(prev, path), ...patch, path }));
 
   const value = L.edit && L.edit.base === doc.content ? L.edit.text : doc.content;
-  const locked = saving || run.running || doc.running;
+  const locked = saving || run.running || doc.running || detail.running?.kind === 'batch';
   const canSave = !locked && doc.status !== 'approved' && value.trim() !== '' && value !== doc.content;
 
   // 저장 본문을 PUT으로 보내고 상세를 다시 읽는다.
@@ -188,9 +188,21 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
       <DocActions
         projectId={projectId}
         doc={doc}
-        disabled={saving || run.running}
+        disabled={locked}
         refresh={refresh}
       />
+      {doc.upstreamChanged && <Notice tone="warn" title="앞 문서 변경을 확인하세요">이 문서를 직접 살펴본 뒤 확인을 누르면 내용과 초안/승인 상태를 유지하며 표시만 지웁니다.</Notice>}
+      {detail.repoContext && (() => {
+        const original = detail.repoContext.originals.find((item) => item.path === `docs/${doc.path}`);
+        if (!original) return null;
+        const omission: Record<string, string> = { not_found: '기준 저장소에 같은 경로의 파일이 없습니다.', instruction_file: '지침 파일은 보안상 비교 내용에서 제외했습니다.', symlink: '기준 경로가 심볼릭 링크여서 읽지 않았습니다.', non_text: '텍스트 파일이 아니어서 읽지 않았습니다.', file_limit: '파일 수 또는 개별 파일 크기 제한으로 읽지 않았습니다.', total_limit: '전체 크기 제한으로 읽지 않았습니다.', redacted: '민감 정보가 감지되어 원본 내용을 표시하지 않습니다.' };
+        return <section className="stack" aria-label="저장소 원본과 비교">
+          <h3 className="h4">저장소 원본과 비교</h3>
+          <p className="caption">기준 커밋 {detail.repoContext.baselineCommit}</p>
+          <div><h4 className="caption">기준 저장소</h4>{original.originalText === null ? <p className="caption">{omission[original.omissionReason ?? 'not_found']}</p> : <pre className="run-stream" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{original.originalText}</pre>}</div>
+          <div><h4 className="caption">현재 {doc.status === 'approved' ? '승인 문서' : '초안'}</h4><pre className="run-stream" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{doc.content}</pre></div>
+        </section>;
+      })()}
       {L.error && (
         <Notice tone="error" title="저장하지 못했습니다">
           <p className="notice-body">{L.error.message}</p>

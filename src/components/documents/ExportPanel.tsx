@@ -52,7 +52,7 @@ export function ExportPanel({ projectId, detail }: { projectId: number; detail: 
             <Button
               type="button"
               variant="secondary"
-              disabled={!info?.canPush}
+              disabled={!info?.canPush || infoError !== null}
               onClick={() => setDialogOpen(true)}
             >
               PR 올리기
@@ -93,9 +93,7 @@ export function ExportPanel({ projectId, detail }: { projectId: number; detail: 
         ) : (
           <Notice tone="error" title="오류">
             <p className="notice-body">{infoError.message}</p>
-            <Button variant="utility" onClick={() => setAttempt((n) => n + 1)}>
-              다시 시도
-            </Button>
+            {infoError.stale ? <Link href="/">새 프로젝트 만들기</Link> : <Button variant="utility" onClick={() => setAttempt((n) => n + 1)}>다시 시도</Button>}
           </Notice>
         )
       )}
@@ -118,8 +116,10 @@ export function ExportPanel({ projectId, detail }: { projectId: number; detail: 
         <PrDialog
           projectId={projectId}
           info={info}
+          preserved={detail.repoContext?.originals.filter((item) => !info.files.includes(item.path) && item.omissionReason !== 'not_found').map((item) => item.path) ?? []}
           onClose={() => setDialogOpen(false)}
           onCreated={setPrUrl}
+          onReviewChanged={() => { setDialogOpen(false); setInfo(null); setInfoError(null); setAttempt((n) => n + 1); }}
         />
       )}
 

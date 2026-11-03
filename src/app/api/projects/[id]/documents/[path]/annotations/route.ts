@@ -1,3 +1,4 @@
+import { batchBusy } from '@/server/runtime';
 import { DOC_PATH_RE, isAgentName } from '@/lib/contract';
 import { getAdapter } from '@/server/agents';
 import { annotationPromptFor, parseAnnotations } from '@/server/annotations';
@@ -17,7 +18,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
   if (!DOC_PATH_RE.test(path) || kindOf(path) !== 'screen') {
     return apiError(400, 'invalid_input', '화면 정의서만 주석을 달 수 있습니다');
   }
+  if (batchBusy(projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   const body = await readJson(req);
+  if (batchBusy(projectId)) return apiError(409, 'busy', '전체 초안 작업이 실행 중입니다');
   if (!body) return apiError(400, 'invalid_input', '요청 형식이 올바르지 않습니다');
   if (!isAgentName(body.agent)) return apiError(400, 'invalid_input', '잘못된 에이전트입니다');
   const annotations = parseAnnotations(body.annotations);

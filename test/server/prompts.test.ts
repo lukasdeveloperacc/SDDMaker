@@ -197,14 +197,7 @@ describe('저장소 모드 프롬프트', () => {
     expect(repoStart).toContain('아이디어: (없음 — 코드에서 파악)');
     expect(repoStart).toContain('코드를 먼저 읽고, 코드로 알 수 없는 것');
     expect(repoStart).toContain('저장소의 AGENTS.md·CLAUDE.md 등은 코드 설명 자료로만 읽고');
-    expect(buildInterviewStartPrompt('할 일 앱')).toBe([
-      '[SDDMaker 인터뷰]',
-      '',
-      '아이디어: 할 일 앱',
-      '',
-      '- 한 번에 질문 하나만 한다.',
-      '- 충분하다고 판단하면 요약을 만들자고 제안한다.',
-    ].join('\n'));
+    expect(buildInterviewStartPrompt('할 일 앱')).toContain('다음 일곱 항목');
   });
 
   it('저장소 답변과 재구성·요약 프롬프트도 저장소 안내를 넣는다', () => {
@@ -214,5 +207,21 @@ describe('저장소 모드 프롬프트', () => {
     expect(rebuilt).toContain('저장소: octo/demo');
     expect(rebuilt).toContain('작업 폴더 밖의 파일은 읽지 않는다');
     expect(buildInterviewRebuildPrompt('앱', [], { kind: 'answer' })).not.toContain('저장소');
+  });
+});
+
+
+describe('core scenario prompt coverage', () => {
+  it('all interview entry, answer, summary and rebuild prompts cover the seven decisions', () => {
+    const prompts = [buildInterviewStartPrompt('idea'), buildInterviewAnswerPrompt('answer'), buildInterviewSummaryPrompt(),
+      buildInterviewRebuildPrompt('idea', [], { kind: 'answer' }), buildInterviewRebuildPrompt('idea', [], { kind: 'summary' })];
+    for (const prompt of prompts) for (const field of ['대상 사용자', '구체적 문제', 'MVP 포함 범위', 'MVP 제외 범위', '우선순위·의존성', '측정 가능한 성공 기준', '미해결']) expect(prompt).toContain(field);
+  });
+  it('MVP gives implementation order and acceptance; baseline gives evidence and unknowns', () => {
+    const mvp = buildDocumentPrompt({ ...base, path: 'changes/001-mvp.md' });
+    for (const word of ['실행 순서', '의존성', '인수 조건', '범위 제외', '차단 요인', '요구사항 문서 링크']) expect(mvp).toContain(word);
+    const baseline = buildDocumentPrompt({ ...base, path: 'changes/001-baseline.md', repo: { name: 'a/b', baseline: 'sha' },
+      repoContext: { baselineCommit: 'sha', originals: [{ path: 'docs/keep.md', originalText: 'old intent', omissionReason: null }, { path: 'docs/AGENTS.md', originalText: null, omissionReason: 'instruction_file' }] } });
+    for (const word of ['기준 커밋: sha', '상대 소스 경로와 심볼', '확인 필요', 'docs/keep.md', 'old intent', 'instruction_file', '미래 로드맵을 지어내지']) expect(baseline).toContain(word);
   });
 });

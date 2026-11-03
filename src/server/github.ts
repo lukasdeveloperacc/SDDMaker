@@ -6,7 +6,7 @@ import { ghHome } from './env';
 
 export type GithubErrorCode = Extract<
   HttpErrorCode,
-  'gh_not_found' | 'github_not_connected' | 'repo_not_found' | 'clone_failed' | 'no_push_permission' | 'pr_failed'
+  'gh_not_found' | 'github_not_connected' | 'repo_not_found' | 'clone_failed' | 'no_push_permission' | 'pr_failed' | 'repo_stale' | 'review_changed' | 'precondition'
 >;
 
 const STATUS_OF: Record<GithubErrorCode, number> = {
@@ -16,11 +16,14 @@ const STATUS_OF: Record<GithubErrorCode, number> = {
   clone_failed: 502,
   no_push_permission: 409,
   pr_failed: 502,
+  repo_stale: 409,
+  review_changed: 409,
+  precondition: 409,
 };
 
 export class GithubError extends Error {
   readonly status: number;
-  constructor(readonly code: GithubErrorCode, message: string) {
+  constructor(readonly code: GithubErrorCode, message: string, readonly items?: string[]) {
     super(message);
     this.name = 'GithubError';
     this.status = STATUS_OF[code];

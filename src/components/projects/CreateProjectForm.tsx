@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -17,15 +17,17 @@ export interface ProjectInputErrors {
   idea?: string;
   repo?: string;
 }
+export type ProjectMode = 'existing' | 'new';
 
 // 저장소를 넣으면 이름과 아이디어는 선택이다(이름이 비면 저장소 이름을 쓴다). 형식 검사는 서버가 한다.
-export function checkProjectInput(name: string, idea: string, repo = ''): ProjectInputErrors | null {
+export function checkProjectInput(name: string, idea: string, repo = '', mode: ProjectMode = repo.trim() ? 'existing' : 'new'): ProjectInputErrors | null {
   const errors: ProjectInputErrors = {};
-  if (repo.trim() === '') {
+  if (mode === 'existing' && repo.trim() === '') errors.repo = '기존 프로젝트에는 GitHub 저장소가 필요합니다.';
+  if (mode === 'new') {
     if (name.trim() === '') errors.name = '프로젝트 이름을 입력하세요.';
     if (idea.trim() === '') errors.idea = '아이디어를 입력하세요.';
   }
-  return errors.name || errors.idea ? errors : null;
+  return errors.name || errors.idea || errors.repo ? errors : null;
 }
 
 // 저장소를 넣으면 이름·아이디어는 선택이므로 그 오류를 지운다.
@@ -35,13 +37,14 @@ export function errorsAfterRepoChange(errors: ProjectInputErrors, repo: string):
 }
 
 // 저장소가 비어 있으면 repo 키를 보내지 않는다. 기존 요청 본문과 같다.
-export function buildProjectBody(name: string, idea: string, designMd: string, repo: string) {
-  const body: { name: string; idea: string; designMd: string; repo?: string } = {
+export function buildProjectBody(name: string, idea: string, designMd: string, repo: string, mode: ProjectMode = repo.trim() ? 'existing' : 'new') {
+  const body: { name: string; idea: string; designMd: string; mode: ProjectMode; repo?: string } = {
     name: name.trim(),
     idea: idea.trim(),
     designMd,
+    mode,
   };
-  if (repo.trim() !== '') body.repo = repo.trim();
+  if (mode === 'existing' && repo.trim() !== '') body.repo = repo.trim();
   return body;
 }
 
@@ -74,19 +77,30 @@ export function createErrorView(code: string, message: string, repoSubmitted: bo
 export function CreateProjectForm({ onCancel }: { onCancel: () => void }) {
   const router = useRouter();
   const [repo, setRepo] = useState('');
+  const [mode, setMode] = useState<ProjectMode>('new');
   const [name, setName] = useState('');
   const [idea, setIdea] = useState('');
   const [designMd, setDesignMd] = useState('');
   const [errors, setErrors] = useState<ProjectInputErrors>({});
   const [errorView, setErrorView] = useState<CreateErrorView | null>(null);
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  const hasRepo = repo.trim() !== '';
+  const hasRepo = mode === 'existing';
+  const changeMode = (next: ProjectMode) => {
+    setMode(next);
+    setErrors({});
+    setErrorView(null);
+  };
+
+  useEffect(() => {
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errors]);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
-    const found = checkProjectInput(name, idea, repo);
+    const found = checkProjectInput(name, idea, repo, mode);
     setErrors(found ?? {});
     setErrorView(null);
     if (found) return;
@@ -94,7 +108,7 @@ export function CreateProjectForm({ onCancel }: { onCancel: () => void }) {
     setBusy(true);
     try {
       // designMd는 trim 없이 보낸다. 서버가 빈 값이면 NULL로 둔다.
-      const res = await api<ProjectResponse>('POST', '/api/projects', buildProjectBody(name, idea, designMd, repo));
+      const res = await api<ProjectResponse>('POST', '/api/projects', buildProjectBody(name, idea, designMd, repo, mode));
       router.push(`/projects/${res.project.id}`);
     } catch (err) {
       if (err instanceof ApiRequestError) {
@@ -112,9 +126,14 @@ export function CreateProjectForm({ onCancel }: { onCancel: () => void }) {
 
   return (
     <Card>
-      <form onSubmit={submit} noValidate>
+      <form ref={formRef} onSubmit={submit} noValidate>
         <fieldset disabled={busy} style={stack}>
           <h2 className="title">새 프로젝트</h2>
+          <fieldset className="row" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="caption">시작 방식</legend>
+            <label><input type="radio" name="project-mode" value="existing" checked={mode === 'existing'} onChange={() => changeMode('existing')} /> 기존 프로젝트</label>
+            <label><input type="radio" name="project-mode" value="new" checked={mode === 'new'} onChange={() => changeMode('new')} /> 새 프로젝트</label>
+          </fieldset>
           {errorView && (
             <Notice tone="error" title="오류">
               {errorView.message}
@@ -126,8 +145,9 @@ export function CreateProjectForm({ onCancel }: { onCancel: () => void }) {
               )}
             </Notice>
           )}
-          <TextInput
-            label="GitHub 저장소 (선택)"
+          {hasRepo && <TextInput
+            label="GitHub 저장소"
+            required
             value={repo}
             onChange={(e) => {
               setRepo(e.target.value);
@@ -135,7 +155,7 @@ export function CreateProjectForm({ onCancel }: { onCancel: () => void }) {
             }}
             placeholder="owner/repo 또는 https://github.com/owner/repo"
             error={errors.repo}
-          />
+          />}
           <TextInput
             label={hasRepo ? '프로젝트 이름 (선택)' : '프로젝트 이름'}
             value={name}

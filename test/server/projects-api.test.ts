@@ -154,3 +154,22 @@ describe('PUT /api/projects/:id/design', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('explicit creation mode', () => {
+  it('rejects mismatched/unknown mode and retains legacy inference', async () => {
+    for (const body of [
+      { mode: 'existing', name: 'p', idea: 'i' },
+      { mode: 'new', name: 'p', idea: 'i', repo: 'a/b' },
+      { mode: 'invalid', name: 'p', idea: 'i' },
+    ]) {
+      const res = await createPOST(jsonReq('POST', `${URL_BASE}/api/projects`, body));
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('invalid_input');
+    }
+    for (const mode of ['new', undefined]) {
+      const res = await createPOST(jsonReq('POST', `${URL_BASE}/api/projects`, { mode, name: 'p', idea: 'i' }));
+      expect(res.status).toBe(201);
+      expect((await res.json()).project.repo).toBeNull();
+    }
+  });
+});

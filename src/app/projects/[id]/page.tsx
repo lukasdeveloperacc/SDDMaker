@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 import { InterviewPanel } from '@/components/InterviewPanel';
 import { StageNav, EXPORT_KEY, INTERVIEW_KEY, defaultStageKey } from '@/components/StageNav';
 import { DocumentPanel } from '@/components/documents/DocumentPanel';
+import { BatchPanel } from '@/components/documents/BatchPanel';
 import { ExportPanel } from '@/components/documents/ExportPanel';
 import { ScreenPanel } from '@/components/screens/ScreenPanel';
 import { Button, Notice } from '@/components/ui';
@@ -135,6 +136,8 @@ export default function Page() {
       </header>
 
       {loadError && <Notice tone="warn" title="오류">{loadError.message} 화면 내용은 마지막으로 읽은 값입니다.</Notice>}
+
+      <BatchPanel projectId={id} detail={detail} refresh={refresh} />
 
       <div className="project-workspace">
         <aside className="project-sidebar">

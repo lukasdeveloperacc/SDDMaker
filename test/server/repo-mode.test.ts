@@ -167,7 +167,7 @@ describe('저장소 프로젝트 실행 경로', () => {
     expect(runs()).toHaveLength(0);
   });
 
-  it('기준 문서 프롬프트에 현재 커밋을 적고, 다른 문서는 적지 않는다', () => {
+  it('저장소 문서 프롬프트에 현재 기준 커밋을 적는다', () => {
     const id = repoProject();
     const dir = makeClone(id);
     const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -175,7 +175,7 @@ describe('저장소 프로젝트 실행 경로', () => {
     const baseline = generationPrompt(id, BASELINE_DOC);
     expect(baseline).toContain(`기준 커밋: ${sha}`);
     expect(baseline).toContain('구현됨');
-    expect(generationPrompt(id, '0-PRODUCT.md')).not.toContain('기준 커밋');
+    expect(generationPrompt(id, '0-PRODUCT.md')).toContain(`기준 커밋: ${sha}`);
   });
 
   it('승인된 화면 정의서 흐름 문서는 저장소 프로젝트에서 화면 행을 만들지 않는다', async () => {

@@ -41,13 +41,27 @@ async function repoProject(opts?: Parameters<typeof seedRemote>[0]): Promise<{ i
   return { id: project.id, remote };
 }
 
-const call = (method: 'GET' | 'POST', id: number, signal?: AbortSignal) =>
-  (method === 'GET' ? GET : POST)(jsonReq(method, `${URL_BASE}/api/projects/${id}/pr`, undefined, signal), ctx({ id: String(id) }));
+const call = async (method: 'GET' | 'POST', id: number, signal?: AbortSignal) => {
+  if (method === 'GET') return GET(jsonReq(method, `${URL_BASE}/api/projects/${id}/pr`, undefined, signal), ctx({ id: String(id) }));
+  const preview = await GET(jsonReq('GET', `${URL_BASE}/api/projects/${id}/pr`), ctx({ id: String(id) }));
+  const body = preview.ok ? await preview.json() as { reviewToken: string } : { reviewToken: '' };
+  return POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, { reviewToken: body.reviewToken, confirmOverwrites: true }, signal), ctx({ id: String(id) }));
+};
 
 const branches = (remote: string) =>
   git(['-C', remote, 'for-each-ref', '--format=%(refname:short)', 'refs/heads']).trim().split('\n');
 const prBranches = (remote: string) => branches(remote).filter((b) => b.startsWith('sddmaker/docs-'));
 const treeOf = (remote: string, branch: string) => git(['-C', remote, 'ls-tree', '-r', '--name-only', branch]).trim().split('\n');
+
+function advanceRemote(remote: string) {
+  const work = fs.mkdtempSync(path.join(dataDir(), 'advance-remote-'));
+  git(['clone', '-q', remote, work]);
+  fs.writeFileSync(path.join(work, 'README.md'), `advanced ${Date.now()}\n`);
+  git(['-C', work, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'add', 'README.md']);
+  git(['-C', work, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'advance']);
+  git(['-C', work, 'push', '-q', 'origin', 'main']);
+  return git(['-C', work, 'rev-parse', 'HEAD']).trim();
+}
 
 // 실패·취소 뒤에도 클론은 깨끗하고, 임시 작업 트리와 잠금은 남지 않아야 한다.
 function expectClean(id: number) {
@@ -72,11 +86,13 @@ describe('GET /api/projects/:id/pr', () => {
     const { id } = await repoProject();
     const res = await call('GET', id);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { repo: string; defaultBranch: string; canPush: boolean; files: string[]; overwrites: string[] };
+    const body = (await res.json()) as { repo: string; defaultBranch: string; canPush: boolean; files: string[]; overwrites: string[]; baselineCommit: string; remoteCommit: string; reviewToken: string };
     expect(body).toMatchObject({ repo: 'octo/app', defaultBranch: 'main', canPush: true });
     expect(body.files).toContain('docs/AGENTS.md');
     expect(body.files).toContain('docs/0-PRODUCT.md');
     expect(body.overwrites).toEqual(['docs/0-PRODUCT.md']);
+    expect(body.baselineCommit).toBe(body.remoteCommit);
+    expect(body.reviewToken).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('권한이 읽기뿐이면 canPush:false로 200을 준다', async () => {
@@ -85,6 +101,23 @@ describe('GET /api/projects/:id/pr', () => {
     const res = await call('GET', id);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { canPush: boolean }).canPush).toBe(false);
+  });
+
+  it('원격 기본 브랜치가 clone baseline보다 앞서면 preview를 stale로 막는다', async () => {
+    const { id, remote } = await repoProject();
+    const baseline = git(['-C', repoDir(id), 'rev-parse', 'HEAD']).trim();
+    const remoteSha = advanceRemote(remote.remote);
+    const res = await call('GET', id);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'repo_stale', items: [baseline, remoteSha] });
+  });
+
+  it('원격 기본 브랜치를 확인하지 못하면 preview를 실패 처리한다', async () => {
+    const { id } = await repoProject();
+    git(['-C', repoDir(id), 'remote', 'set-url', 'origin', path.join(dataDir(), 'missing-remote.git')]);
+    const res = await call('GET', id);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ code: 'pr_failed' });
   });
 
   it('저장소가 연결되지 않은 프로젝트는 404 not_found', async () => {
@@ -158,6 +191,56 @@ describe('POST /api/projects/:id/pr', () => {
     expectClean(id);
   });
 
+  it('PR에는 기존 docs/AGENTS.md를 보존한다', async () => {
+    const rules = '# original rules\r\nkeep byte content\r\n';
+    const { id, remote } = await repoProject({ files: { 'README.md': '# app\n', 'docs/AGENTS.md': rules, 'docs/0-PRODUCT.md': '# product\n', 'docs/keep.md': 'keep\n' } });
+    expect((await call('POST', id)).status).toBe(201);
+    const branch = prBranches(remote.remote)[0];
+    expect(git(['-C', remote.remote, 'show', `${branch}:docs/AGENTS.md`])).toBe(rules);
+  });
+
+  it('원격이 preview 이후 바뀌면 POST에서 stale로 막고 브랜치를 올리지 않는다', async () => {
+    const { id, remote } = await repoProject();
+    const preview = await call('GET', id);
+    const body = await preview.json() as { reviewToken: string };
+    const remoteSha = advanceRemote(remote.remote);
+    const res = await POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, { reviewToken: body.reviewToken, confirmOverwrites: true }), ctx({ id: String(id) }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'repo_stale', items: [expect.any(String), remoteSha] });
+    expect(prBranches(remote.remote)).toEqual([]);
+  });
+
+  it('마지막 원격 freshness 검사에서 감지한 변경은 push 전에 막는다', async () => {
+    const { id, remote } = await repoProject();
+    const preview = await call('GET', id);
+    const body = await preview.json() as { reviewToken: string };
+    const wrapperDir = fs.mkdtempSync(path.join(dataDir(), 'git-wrapper-'));
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const wrapper = path.join(wrapperDir, 'git');
+    const marker = path.join(wrapperDir, 'advanced');
+    fs.writeFileSync(wrapper, `#!/bin/sh\ncase " $* " in\n  *" ls-remote --heads origin refs/heads/sddmaker/docs-"*)\n    "${realGit}" "$@"\n    result=$?\n    if [ ! -e "${marker}" ]; then\n      touch "${marker}"\n      work="${wrapperDir}/work"\n      "${realGit}" clone -q "${remote.remote}" "$work"\n      printf 'advanced during POST\\n' > "$work/README.md"\n      "${realGit}" -C "$work" config user.name test\n      "${realGit}" -C "$work" config user.email test@example.com\n      "${realGit}" -C "$work" add README.md\n      "${realGit}" -C "$work" -c commit.gpgsign=false commit -qm advance\n      "${realGit}" -C "$work" push -q origin main\n    fi\n    exit "$result"\n    ;;\nesac\nexec "${realGit}" "$@"\n`);
+    fs.chmodSync(wrapper, 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${wrapperDir}:${oldPath ?? ''}`;
+    try {
+      const res = await POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, { reviewToken: body.reviewToken, confirmOverwrites: true }), ctx({ id: String(id) }));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'repo_stale' });
+      expect(prBranches(remote.remote)).toEqual([]);
+    } finally {
+      process.env.PATH = oldPath;
+      fs.rmSync(wrapperDir, { recursive: true, force: true });
+    }
+  });
+
+  it('missing review token returns review_changed', async () => {
+    const { id, remote } = await repoProject();
+    const res = await POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, {}), ctx({ id: String(id) }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'review_changed' });
+    expect(prBranches(remote.remote)).toEqual([]);
+  });
+
   it('1분 뒤 다시 올리면 다른 브랜치가 된다', async () => {
     vi.setSystemTime(new Date('2026-10-21T03:00:00Z'));
     const { id, remote } = await repoProject();
@@ -224,14 +307,15 @@ describe('POST /api/projects/:id/pr', () => {
     expectClean(id);
   });
 
-  it('docs가 심볼릭 링크인 저장소는 바깥에 아무것도 쓰지 않고 pr_failed', async () => {
+  it('docs가 심볼릭 링크인 저장소는 기존 규칙 파일을 확인할 수 없어 export_blocked', async () => {
     const { id, remote } = await repoProject({ symlinkDocs: true });
     const before = fs.readdirSync(remote.outside);
     const get = await call('GET', id);
-    expect(((await get.json()) as { overwrites: string[] }).overwrites).toEqual([]);
+    expect(get.status).toBe(409);
+    expect(await get.json()).toMatchObject({ code: 'export_blocked', items: ['docs/AGENTS.md'] });
     const res = await call('POST', id);
-    expect(res.status).toBe(502);
-    expect(await res.json()).toMatchObject({ code: 'pr_failed', message: '저장소의 docs 경로가 폴더가 아니어서 PR을 올릴 수 없습니다' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'export_blocked', items: ['docs/AGENTS.md'] });
     expect(fs.readdirSync(remote.outside)).toEqual(before);
     expect(prBranches(remote.remote)).toEqual([]);
     expectClean(id);
@@ -272,5 +356,29 @@ describe('POST /api/projects/:id/pr', () => {
     } finally {
       handle.release();
     }
+  });
+
+  it('stale review token and unconfirmed overwrite are rejected without a push', async () => {
+    const { id, remote } = await repoProject();
+    const preview = await call('GET', id);
+    const token = (await preview.json() as { reviewToken: string }).reviewToken;
+    const stale = await POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, { reviewToken: 'stale', confirmOverwrites: true }), ctx({ id: String(id) }));
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: 'review_changed' });
+    const missingConfirmation = await POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, { reviewToken: token, confirmOverwrites: false }), ctx({ id: String(id) }));
+    expect(missingConfirmation.status).toBe(409);
+    expect(await missingConfirmation.json()).toMatchObject({ code: 'precondition' });
+    expect(prBranches(remote.remote)).toEqual([]);
+  });
+
+  it('export content changed after preview invalidates the review token', async () => {
+    const { id, remote } = await repoProject();
+    const preview = await call('GET', id);
+    const token = (await preview.json() as { reviewToken: string }).reviewToken;
+    updateDocument(id, '0-PRODUCT.md', { content: '# changed after preview\n', status: 'approved' });
+    const res = await POST(jsonReq('POST', `${URL_BASE}/api/projects/${id}/pr`, { reviewToken: token, confirmOverwrites: true }), ctx({ id: String(id) }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'review_changed' });
+    expect(prBranches(remote.remote)).toEqual([]);
   });
 });

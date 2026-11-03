@@ -23,14 +23,16 @@ const pathList: CSSProperties = {
 
 export const NO_PUSH_TEXT = '이 저장소에 push 권한이 없어 PR을 올릴 수 없습니다. zip을 내려받아 직접 올리세요.';
 
-export type PrError = { message: string; noPush: boolean; connect: boolean };
+export type PrError = { message: string; noPush: boolean; connect: boolean; stale: boolean; changed: boolean };
 
 // 오류 코드별 화면 처리. 연결 문제는 설정 화면 링크를 함께 보여 준다.
 export function prErrorView(err: unknown): PrError {
-  if (!(err instanceof ApiRequestError)) return { message: '요청을 처리하지 못했습니다.', noPush: false, connect: false };
-  if (err.code === 'no_push_permission') return { message: NO_PUSH_TEXT, noPush: true, connect: false };
+  if (!(err instanceof ApiRequestError)) return { message: '요청을 처리하지 못했습니다.', noPush: false, connect: false, stale: false, changed: false };
+  if (err.code === 'repo_stale') return { message: '기준 커밋 이후 저장소가 바뀌었습니다. 현재 프로젝트의 초안은 보존되어 있습니다. 승인된 문서는 ZIP으로 내려받을 수 있으며, 새 프로젝트를 만들어 최신 저장소에서 다시 생성하세요.', noPush: false, connect: false, stale: true, changed: false };
+  if (err.code === 'review_changed') return { message: '검토한 내용이 바뀌었습니다. 최신 미리보기를 다시 확인하고 새로 동의하세요.', noPush: false, connect: false, stale: false, changed: true };
+  if (err.code === 'no_push_permission') return { message: NO_PUSH_TEXT, noPush: true, connect: false, stale: false, changed: false };
   const connect = err.code === 'github_not_connected' || err.code === 'gh_not_found';
-  return { message: err.message, noPush: false, connect };
+  return { message: err.message, noPush: false, connect, stale: false, changed: false };
 }
 
 export function PrDialog({
@@ -38,16 +40,21 @@ export function PrDialog({
   info,
   onClose,
   onCreated,
+  preserved,
+  onReviewChanged,
 }: {
   projectId: number;
   info: PrInfoResponse;
   onClose: () => void;
   onCreated: (url: string) => void;
+  preserved: string[];
+  onReviewChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PrError | null>(null);
   const [url, setUrl] = useState<string | null>(null);
-  const blocked = busy || error?.noPush === true;
+  const [confirmOverwrites, setConfirmOverwrites] = useState(false);
+  const blocked = busy || error?.noPush === true || error?.changed === true || error?.stale === true || (info.overwrites.length > 0 && !confirmOverwrites);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -55,7 +62,7 @@ export function PrDialog({
     setBusy(true);
     setError(null);
     try {
-      const res = await api<PrCreateResponse>('POST', `/api/projects/${projectId}/pr`);
+      const res = await api<PrCreateResponse>('POST', `/api/projects/${projectId}/pr`, { reviewToken: info.reviewToken, confirmOverwrites });
       setUrl(res.url);
       onCreated(res.url);
     } catch (err) {
@@ -83,8 +90,16 @@ export function PrDialog({
             <dd style={{ margin: 0 }}>{info.defaultBranch}</dd>
           </div>
           <div>
+            <dt className="caption">기준 커밋</dt>
+            <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>{info.baselineCommit}</dd>
+          </div>
+          <div>
+            <dt className="caption">현재 원격 커밋</dt>
+            <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>{info.remoteCommit}</dd>
+          </div>
+          <div>
             <dt className="caption">올릴 파일</dt>
-            <dd style={{ margin: 0 }}>{info.files.length}개</dd>
+            <dd style={{ margin: 0 }}><ul style={pathList}>{info.files.map((path) => <li key={path}>{path}</li>)}</ul></dd>
           </div>
         </dl>
 
@@ -103,6 +118,16 @@ export function PrDialog({
           </section>
         )}
 
+        {!url && <section style={stack} aria-labelledby="pr-preserved-title">
+          <h3 id="pr-preserved-title" className="h4" style={{ margin: 0 }}>그대로 보존할 원본 파일</h3>
+          {preserved.length === 0 ? <p style={{ margin: 0 }}>추가로 보존할 원본 파일 없음</p> : <ul style={pathList}>{preserved.map((path) => <li key={path}>{path}</li>)}</ul>}
+        </section>}
+
+        {!url && info.overwrites.length > 0 && <label className="caption">
+          <input type="checkbox" checked={confirmOverwrites} onChange={(event) => setConfirmOverwrites(event.target.checked)} />
+          {' '}기존 파일을 덮어쓰는 내용을 확인했습니다.
+        </label>}
+
         {url && (
           <Notice tone="info" title="PR을 만들었습니다">
             <p className="notice-body" style={{ overflowWrap: 'anywhere', margin: 0 }}>
@@ -114,6 +139,8 @@ export function PrDialog({
         {error && (
           <Notice tone={error.noPush ? 'warn' : 'error'} title={error.noPush ? '주의' : '오류'}>
             <p className="notice-body" style={{ margin: 0 }}>{error.message}</p>
+            {error.stale && <p className="notice-body" style={{ margin: 0 }}><Link href="/">새 프로젝트 만들기</Link></p>}
+            {error.changed && <Button variant="utility" onClick={onReviewChanged}>최신 미리보기 다시 확인</Button>}
             {error.connect && (
               <p className="notice-body" style={{ margin: 0 }}>
                 <Link href="/settings/agents">연결에서 GitHub 확인</Link>

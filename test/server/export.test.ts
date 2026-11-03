@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/projects/[id]/export/route';
-import { exportFileName } from '@/server/export';
+import { BASELINE_DOC, CHANGE_DOC } from '@/lib/contract';
+import { buildExportZip, exportFileName } from '@/server/export';
 import { createProject, insertEmptyDocuments, updateDocument } from '@/server/db';
+import { repoDir } from '@/server/env';
 import { ctx, jsonReq } from '../helpers/route';
 
 const CONTENT: Record<string, string> = {
@@ -17,13 +20,28 @@ const CONTENT: Record<string, string> = {
   'screens/home.html': '<!DOCTYPE html><html data-frame="page"><body></body></html>',
 };
 
-function setup(name: string, designMd: string | null, approve: boolean) {
-  const p = createProject({ name, idea: 'idea', designMd });
-  insertEmptyDocuments(p.id, ['requirements/project.md', 'screens/home.html']);
-  for (const [path, content] of Object.entries(CONTENT)) {
+function setup(name: string, designMd: string | null, approve: boolean, repo: string | null = null) {
+  const p = createProject({ name, idea: 'idea', designMd, repo });
+  const changePath = repo ? BASELINE_DOC : CHANGE_DOC;
+  insertEmptyDocuments(p.id, ['requirements/project.md', 'screens/home.html', changePath]);
+  const docsContent = { ...CONTENT, [changePath]: CONTENT[CHANGE_DOC] };
+  if (repo) delete docsContent[CHANGE_DOC];
+  for (const [path, content] of Object.entries(docsContent)) {
     updateDocument(p.id, path, { content, status: approve ? 'approved' : 'draft' });
   }
   return p;
+}
+
+function makeRepo(id: number, rules?: string, symlinkRules = false) {
+  const dir = repoDir(id);
+  fs.mkdirSync(dir, { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+  if (symlinkRules) fs.symlinkSync('keep.md', path.join(dir, 'docs/AGENTS.md'));
+  else if (rules !== undefined) fs.writeFileSync(path.join(dir, 'docs/AGENTS.md'), rules);
+  fs.writeFileSync(path.join(dir, 'docs/keep.md'), 'keep\n');
+  execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', 'add', '-A'], { cwd: dir });
+  execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'seed'], { cwd: dir });
 }
 
 function download(id: number) {
@@ -36,6 +54,15 @@ describe('exportFileName', () => {
     expect(encoded).toBe('%EB%82%98%EC%9D%98-%EC%95%B1-v2-docs.zip');
     expect(ascii).toMatch(/^[A-Za-z0-9_-]+-docs\.zip$/);
     expect(ascii).toBe('-----v2-docs.zip');
+  });
+});
+
+describe('common export files', () => {
+  it('preserves supplied baseline docs/AGENTS.md bytes in the shared ZIP builder', async () => {
+    const originalRules = '# Repository rules\r\nkeep exact bytes\r\n';
+    const bytes = await buildExportZip({ designMd: null, docs: [], rules: 'app rules', originalRules });
+    const zip = await JSZip.loadAsync(bytes);
+    expect(await zip.file('docs/AGENTS.md')?.async('string')).toBe(originalRules);
   });
 });
 
@@ -82,6 +109,27 @@ describe('GET /api/projects/:id/export', () => {
     const p = setup('app2', design, true);
     const zip = await JSZip.loadAsync(await (await download(p.id)).arrayBuffer());
     expect(await zip.file('docs/2-DESIGN.md')?.async('string')).toBe(design);
+  });
+
+  it('repo ZIP preserves baseline rules and uses app rules only when absent', async () => {
+    const rules = '\uFEFF# exact\r\nbytes\r\n';
+    const p = setup('repo-rules', null, true, 'octo/repo');
+    makeRepo(p.id, rules);
+    const zip = await JSZip.loadAsync(await (await download(p.id)).arrayBuffer());
+    expect(await zip.file('docs/AGENTS.md')?.async('string')).toBe(rules);
+
+    const absent = setup('repo-no-rules', null, true, 'octo/repo');
+    makeRepo(absent.id);
+    const fallbackZip = await JSZip.loadAsync(await (await download(absent.id)).arrayBuffer());
+    expect(await fallbackZip.file('docs/AGENTS.md')?.async('string')).toBe(fs.readFileSync(path.resolve('docs/AGENTS.md'), 'utf8'));
+  });
+
+  it('repo ZIP fails closed when baseline rules are a symlink', async () => {
+    const p = setup('repo-unsafe-rules', null, true, 'octo/repo');
+    makeRepo(p.id, undefined, true);
+    const res = await download(p.id);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'export_blocked', items: ['docs/AGENTS.md'] });
   });
 
   it('한글 프로젝트 이름은 filename*=UTF-8 헤더로 준다', async () => {
