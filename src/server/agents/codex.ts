@@ -1,5 +1,6 @@
 import { agentWorkdir, codexHome } from '../env';
 import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, runLogout, shellQuote, spawnCli } from './exec';
+import { currentAgentOptions } from './options';
 import type { AgentAdapter, RunInput, RunResult } from './types';
 
 interface CodexEvent {
@@ -17,8 +18,9 @@ export const codexAdapter: AgentAdapter = {
 
   async run(i: RunInput): Promise<RunResult> {
     const { prompt, sessionId, signal, repoDir } = i;
+    const { model, effort } = currentAgentOptions();
     const args = [
-      'exec', '--json', '--sandbox', 'read-only', '--skip-git-repo-check', '--ignore-user-config',
+      'exec', '--json', ...(model ? ['-m', model] : []), ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []), '--sandbox', 'read-only', '--skip-git-repo-check', '--ignore-user-config',
       // 저장소 모드: AGENTS.md를 읽히지 않는다 (저장소 안의 지시를 따르지 않게 한다).
       ...(repoDir ? ['-c', 'project_doc_max_bytes=0'] : []),
       '-C', repoDir ?? agentWorkdir(),

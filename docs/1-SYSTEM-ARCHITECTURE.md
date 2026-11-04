@@ -44,7 +44,7 @@ flowchart TD
 ```
 
 - **페이지**: 화면과 입력만 맡는다. DB·CLI에 직접 접근하지 않는다. 예외로 화면 정의서의 HTML 정리·컴포넌트 교체는 브라우저가 한다 ([requirements/screens.md](requirements/screens.md#결과-반영)).
-- **연결**: `/settings/agents`에서 간편 로그인과 실제 PTY 터미널을 탭으로 제공하고, AI 에이전트와 GitHub를 섹션으로 나눈다. 작업 화면은 에이전트 Select만 사용하며 로그인 오류는 연결 화면으로 안내한다.
+- **연결**: `/settings/agents`에서 간편 로그인과 실제 PTY 터미널을 탭으로 제공하고, AI 에이전트와 GitHub를 섹션으로 나눈다. 실행 설정(에이전트·모델·추론 강도)은 연결 화면의 기본 실행 설정과 프로젝트 작업 화면 상단의 접힌 실행 설정이 같은 저장값을 쓰며(모델·강도는 에이전트별로 브라우저에 저장하고 `x-agent-options` 요청 헤더로 보낸다) 로그인 오류는 연결 화면으로 안내한다.
 - **API**: 요청 검증, 생성 순서·동시 실행 규칙 검사, 모듈 호출.
 - **DB 모듈**: 스키마 생성과 조회·저장. 테이블은 [3-DATABASE.md](3-DATABASE.md).
 - **에이전트 모듈**: CLI별 어댑터(`claude`, `codex`)가 실행·상태 확인·로그인을 같은 형태로 제공한다. 동작 규칙은 [requirements/agent-cli.md](requirements/agent-cli.md), CLI별 실제 명령은 아래 [외부 연동](#외부-연동-에이전트-cli).
@@ -54,7 +54,7 @@ flowchart TD
 
 ## 데이터 흐름
 
-1. 사용자가 단계(인터뷰 또는 문서)와 에이전트를 고르고 실행한다.
+1. 사용자가 단계(인터뷰 또는 문서)를 고르고, 연결 화면 기본값(또는 작업 화면에서 바꾼 값)의 에이전트·모델·추론 강도로 실행한다.
 2. API가 생성 조건을 확인하고 프롬프트를 조립한다. 들어가는 내용은 [requirements/documents.md](requirements/documents.md#생성-입력).
 3. 에이전트 모듈이 CLI를 실행하고 출력을 SSE로 브라우저에 흘린다.
 4. 완료되면 결과를 저장한다 — 마크다운 문서는 서버가, 화면 정의서는 브라우저가 정리 후 저장 API로. 인터뷰는 CLI 세션 ID를 저장해 다음 턴에 이어 간다.
@@ -68,6 +68,7 @@ flowchart TD
 | 항목 | Claude Code | Codex |
 | --- | --- | --- |
 | 실행 | `<CLAUDE_CLI> -p --output-format stream-json --verbose --include-partial-messages --tools "" --setting-sources "" --strict-mcp-config --session-id <uuid>` | `<CODEX_CLI> exec --json --sandbox read-only --skip-git-repo-check --ignore-user-config -C <작업 폴더> -` |
+| 모델·강도 (선택) | `--model <모델> --effort <low\|medium\|high\|xhigh\|max>` (`-p` 앞) | `-m <모델> -c model_reasoning_effort="<강도>"` (`resume` 앞). 형식이 맞지 않는 값은 서버가 버리고 CLI 기본값을 쓴다 |
 | 저장소 모드 | `--tools Read,Grep,Glob --restricted --allowedTools Read,Grep,Glob` (`--tools ""` 대신) | `-c project_doc_max_bytes=0 -C <클론>` |
 | 이어하기 | `--session-id` 대신 `--resume <uuid>` | `exec <같은 옵션> resume <thread_id> -` |
 | 프롬프트 전달 | 표준입력 | 표준입력 (`-`) |
@@ -231,5 +232,12 @@ Codex의 Linux read-only sandbox는 Docker 호스트의 namespace·seccomp 정�
 - 저장소 문맥은 기준 커밋의 추적 Git blob에서 결정적 제한으로 읽는다. 생성 도구의 읽기 범위 제한을 보증하는 구조가 아니며, 원문은 지시문으로 실행하지 않는다. 원문 비교의 제한/누락/가림은 [GitHub R5](requirements/github.md#r5r6-코드-근거원문-보존pr-검토)를 따른다.
 - ZIP과 PR은 [`src/server/export.ts`](../src/server/export.ts)의 공통 `exportFiles`에서 원래 `docs/AGENTS.md`를 보존한다. 안전하게 읽을 수 없는 원본 규칙은 `export_blocked/items`로 중단하고, 원본이 없을 때만 앱 규칙을 넣는다. 원본의 UTF-8 BOM과 줄바꿈도 보존한다.
 - PR 미리보기와 push 직전에 인증된 git으로 기본 브랜치 SHA를 확인한다. 확인한 클론 기준 SHA에서 worktree를 만들고, 검토 토큰과 덮어쓰기 명시 확인을 검증한다. 원격 차이는 `repo_stale` 409, 조회 불능은 `pr_failed` 502다. 클론 fetch/reset/rebase는 하지 않는다. 미리보기·POST·push 직전에 최신성을 확인한다. 마지막 확인 뒤 원격이 바뀔 수 있어 원자적 원격 잠금을 주장하지 않는다.
+- 실행 잠금은 프로젝트당 하나다. 요구사항 문서 생성만 `acquireSharedRun`으로 같은 잠금을 공유하며 자식 중단 컨트롤러로 동시 3개(`MAX_PARALLEL`)까지 돈다. 잠금·진행·문서·디자인 변경은 `src/server/events.ts`의 프로젝트별 발행으로 `GET /api/projects/:id/events`(SSE)에 흘러 화면이 폴링 없이 상세를 다시 읽는다. 마크다운 생성은 연결이 끊겨도 서버가 끝까지 저장하고(`detached`), 취소는 `DELETE /api/projects/:id/run`만 한다 ([changes/016](changes/016-parallel-requirements.md)).
+
+## 디자인 단계 구조 (015)
+
+- 디자인 문서는 문서 행이 아니라 `projects.design_md` 한 곳에만 둔다. 생성은 `POST /api/projects/:id/design/generate`(SSE)이고 서버는 저장하지 않는다. 화면이 결과를 편집기에 채우고 사용자가 `PUT /design`으로 저장한다. 실행 잠금 종류는 `design`이다.
+- 생성 조건·입력은 화면 정의서와 같다(`designGate`·`designInputDocs`가 같은 규칙을 대리 경로로 재사용한다). 화면에서 다듬던 작업본을 `base`로 받아 기준 문서로 쓴다.
+- 기준 화면은 별도 구조가 없다. 화면 정의서 패널을 디자인 패널 안에 그대로 끼우고, 화면 생성 프롬프트(`generationPrompt`)가 승인된 다른 화면 하나의 HTML을 입력에 더한다.
 
 서버 표적 자동 검증은 CORE 11파일/196건과 최종 배치 15건, REPO 5파일/65건을 통과했다. UI 컴포넌트 14파일/118건 및 전체 테스트 43파일/568건, 타입 검사·린트·빌드가 종료 0이다. 브라우저 조작은 문서 확정 시점에 미검증이다. 이 결과는 실제 AI 출력 품질·실계정 GitHub push 검증 증거가 아니다.

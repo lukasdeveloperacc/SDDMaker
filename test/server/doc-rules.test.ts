@@ -3,6 +3,8 @@ import type { DocumentRecord } from '@/lib/contract';
 import {
   buildDocumentViews,
   computeMissing,
+  designGate,
+  designInputDocs,
   exportGate,
   extractLinks,
   inputDocsFor,
@@ -242,5 +244,29 @@ describe('screenFiles', () => {
   it('목록에서 빠진 화면은 뺀다', () => {
     const docs = approvedChain([rec('screens/old.html', { content: '<html></html>' })]);
     expect(screenFiles(docs)).toEqual(['screens/home.html']);
+  });
+});
+
+describe('디자인 문서 생성 조건과 입력', () => {
+  it('요구사항 문서를 모두 승인하면 열린다 (디자인 문서가 아직 없어도)', () => {
+    expect(designGate(approvedChain())).toEqual({ ok: true });
+  });
+
+  it('승인 안 된 요구사항이 있으면 precondition', () => {
+    const docs = approvedChain([rec('requirements/other.md', { status: 'draft', content: 'o' })]);
+    const link = { content: `${PRODUCT}- [다른](requirements/other.md)\n` };
+    docs[0] = { ...docs[0], ...link };
+    expect(designGate(docs)).toMatchObject({ ok: false, code: 'precondition' });
+  });
+
+  it('목록에서 빠진 요구사항은 조건에서 뺀다', () => {
+    const docs = approvedChain([rec('requirements/old.md', { status: 'draft', content: 'o' })]);
+    expect(designGate(docs)).toEqual({ ok: true });
+  });
+
+  it('입력은 승인된 기본 문서와 요구사항 문서이고 화면·변경 기록은 없다', () => {
+    const docs = approvedChain([rec('screens/home.html', { status: 'approved', content: '<html></html>' })]);
+    const paths = designInputDocs(docs).map((d) => d.path);
+    expect(paths).toEqual(['0-PRODUCT.md', '1-SYSTEM-ARCHITECTURE.md', '3-DATABASE.md', '4-USERFLOW.md', 'requirements/project.md']);
   });
 });

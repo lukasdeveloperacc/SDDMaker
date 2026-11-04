@@ -13,6 +13,7 @@ import {
   type Project,
 } from '@/lib/contract';
 import { dataDir, dbFile } from '@/server/env';
+import { emitProject } from '@/server/events';
 import { SCHEMA_SQL } from './schema';
 
 declare global {
@@ -109,6 +110,7 @@ export function setDesign(id: number, designMd: string | null): Project {
   getDb().prepare('UPDATE projects SET design_md = ? WHERE id = ?').run(designMd, id);
   const p = getProject(id);
   if (!p) throw new Error(`project ${id} not found`);
+  emitProject(id);
   return p;
 }
 
@@ -197,6 +199,7 @@ export function insertEmptyDocuments(projectId: number, paths: string[]): void {
      VALUES (?, ?, '', 'empty', ?)`,
   );
   for (const p of paths) stmt.run(projectId, p, now());
+  emitProject(projectId);
 }
 
 // 바꿀 수 있는 열만 이름으로 고른다 (patch 키를 SQL에 직접 넣지 않는다).
@@ -224,11 +227,13 @@ export function updateDocument(
     .prepare(`UPDATE documents SET ${set} WHERE project_id = ? AND path = ?`)
     .run(...values, now(), projectId, path);
   if (info.changes === 0) throw new Error(`document ${path} of project ${projectId} not found`);
+  emitProject(projectId);
   return getDocument(projectId, path) as DocumentRecord;
 }
 
 export function deleteDocument(projectId: number, path: string): void {
   getDb().prepare('DELETE FROM documents WHERE project_id = ? AND path = ?').run(projectId, path);
+  emitProject(projectId);
 }
 
 export function flagUpstream(projectId: number, paths: string[]): void {
@@ -237,4 +242,5 @@ export function flagUpstream(projectId: number, paths: string[]): void {
   getDb()
     .prepare(`UPDATE documents SET upstream_changed = 1 WHERE project_id = ? AND path IN (${marks})`)
     .run(projectId, ...paths);
+  emitProject(projectId);
 }

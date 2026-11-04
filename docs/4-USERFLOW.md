@@ -22,7 +22,9 @@
                                      ▼
             requirements/<기능> × N  (순서 없음)
                                      ▼
-            screens/<화면> × N  (순서 없음, 디자인 문서 필요, 주석 모드로 컴포넌트 선택·그리기 수정)
+            디자인 문서 + 기준 화면 1개  (붙여 넣은 문서가 있으면 반영해 생성, 화면으로 함께 확인)
+                                     ▼
+            screens/<화면> × N  (순서 없음, 디자인 문서 필요, 승인된 기준 화면을 따름, 주석 모드로 컴포넌트 선택·그리기 수정)
                                      ▼
             changes/001-mvp
                                      ▼
@@ -31,14 +33,15 @@
   각 문서 단계: 생성 → 편집/피드백(되돌리기) → 승인  (승인 취소 → 다시 수정)
 ```
 
-1. **프로젝트 생성** — 이름과 아이디어를 입력하고 디자인 문서를 붙여 넣는다. 화면 정의서 전까지만 넣으면 된다. → [requirements/project.md](requirements/project.md)
-2. **인터뷰 (선택)** — 에이전트를 고르고 질문에 하나씩 답한다. 끝나면 요약을 편집·승인한다. 건너뛰면 아이디어만으로 시작한다. → [requirements/interview.md](requirements/interview.md)
-3. **기본 문서·요구사항 문서** — 단계마다 에이전트를 고르고 생성한다. 직접 편집하거나 피드백으로 재생성하고, 마음에 안 들면 되돌린다. 승인하면 다음 단계가 열린다. `0-PRODUCT.md` 승인 때 요구사항 문서 목록이, `4-USERFLOW.md` 승인 때 화면 목록이 정해진다. → [requirements/documents.md](requirements/documents.md)
-4. **화면 정의서** — 화면마다 HTML 목업을 생성하고, 미리보기에서 컴포넌트를 고르거나 그림을 그려 주석을 쌓은 뒤 한 번에 보내 고친다. → [requirements/screens.md](requirements/screens.md)
-5. **변경 기록** — `changes/001-mvp.md`를 생성·승인한다. → [requirements/documents.md](requirements/documents.md)
-6. **내보내기** — 승인된 문서 세트를 `docs/` 구조의 zip으로 내려받는다. → [requirements/export.md](requirements/export.md)
+1. **프로젝트 생성** — 이름과 아이디어를 입력하고, 가진 디자인 문서가 있으면 붙여 넣는다. 없어도 디자인 단계에서 만들 수 있다. → [requirements/project.md](requirements/project.md)
+2. **인터뷰 (선택)** — 연결 화면의 기본 실행 설정(작업 화면의 접힌 실행 설정에서 이번 작업만 바꿀 수 있다)으로 에이전트를 정하고 질문에 하나씩 답한다. 끝나면 요약을 편집·승인한다. 건너뛰면 아이디어만으로 시작한다. → [requirements/interview.md](requirements/interview.md)
+3. **기본 문서·요구사항 문서** — 같은 실행 설정으로 생성한다(중간에 바꿔도 된다). 직접 편집하거나 피드백으로 재생성하고, 마음에 안 들면 되돌린다. 승인하면 다음 단계가 열린다. `0-PRODUCT.md` 승인 때 요구사항 문서 목록이, `4-USERFLOW.md` 승인 때 화면 목록이 정해진다. → [requirements/documents.md](requirements/documents.md)
+4. **디자인** — 요구사항을 모두 승인하면 열린다. 디자인 문서를 만들거나(붙여 넣은 문서가 있으면 그 값은 그대로 두고 필요한 것만 덧붙여) 저장한 뒤, 같은 화면에서 기준 화면 하나를 만들어 모습을 보고 문서나 화면을 고쳐 기준 화면을 승인한다. → [requirements/screens.md](requirements/screens.md#디자인-단계)
+5. **화면 정의서** — 화면마다 HTML 목업을 생성하고(승인된 기준 화면을 따른다), 미리보기에서 컴포넌트를 고르거나 그림을 그려 주석을 쌓은 뒤 한 번에 보내 고친다. → [requirements/screens.md](requirements/screens.md)
+6. **변경 기록** — `changes/001-mvp.md`를 생성·승인한다. → [requirements/documents.md](requirements/documents.md)
+7. **내보내기** — 승인된 문서 세트를 `docs/` 구조의 zip으로 내려받는다. → [requirements/export.md](requirements/export.md)
 
-**기존 저장소에서 시작** — 새 프로젝트에 GitHub 저장소를 넣으면 클론한 코드를 기준으로 같은 흐름을 밟는다. 화면 정의서는 건너뛰고, 변경 기록은 `changes/001-baseline.md`다. 마지막에 zip 대신 PR로 올릴 수 있다. GitHub 연결은 연결 화면에서 한다. → [requirements/github.md](requirements/github.md)
+**기존 저장소에서 시작** — 새 프로젝트에 GitHub 저장소를 넣으면 클론한 코드를 기준으로 같은 흐름을 밟는다. 화면 정의서와 디자인 문서는 일괄 초안이 만들지 않는다. `4-USERFLOW.md`에 화면 링크가 있으면 승인할 때 화면 행이 생기고, 요구사항 승인 후 디자인 단계에서 디자인 문서(코드 기준)와 기준 화면(프로토타입)을 만든다. 변경 기록은 `changes/001-baseline.md`다. 마지막에 zip 대신 PR로 올릴 수 있다. GitHub 연결은 연결 화면에서 한다. → [requirements/github.md](requirements/github.md)
 
 앞 문서를 다시 고치려면 승인을 취소한다. 뒤 문서는 그대로 남고 "앞 문서 변경됨" 표시가 붙는다.
 
@@ -72,7 +75,8 @@
 | 생성 도중 에이전트 실패·취소 | 기존 본문은 바뀌지 않는다. 에러를 보여 주고 다시 실행할 수 있다 |
 | 피드백 재생성·주석 반영 결과가 나쁨 | 되돌리기로 직전 본문 복구 (1회분) |
 | `0-PRODUCT.md`·`4-USERFLOW.md`의 링크가 규칙 위반 (`0-PRODUCT.md`는 링크 없음 포함) | 승인되지 않는다. 본문을 고치거나 피드백으로 재생성한 뒤 다시 승인 |
-| 화면 정의서 단계인데 디자인 문서 없음 | 프로젝트 디자인 문서를 넣은 뒤 생성 |
+| 화면 정의서 단계인데 디자인 문서 없음 | 디자인 단계에서 붙여 넣거나 만들어 저장한 뒤 생성 |
+| 디자인 문서 생성 결과가 나쁨 | 저장하기 전이면 **변경 버리기**로 저장본으로 돌린다. 피드백을 적어 다시 생성할 수 있다 |
 | 인터뷰 답변 처리 실패 | 다시 시도 (답변은 한 번만 저장된다) |
 | 인터뷰 도중 앱 종료 | 메시지와 세션 ID가 남아 있어 이어서 답할 수 있다 |
 | 승인 취소 후 목록에서 빠진 문서 | 삭제한 뒤 내보낸다 |

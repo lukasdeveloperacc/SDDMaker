@@ -3,7 +3,7 @@ import { docApiPath, type ApproveResponse, type DocumentView } from '@/lib/contr
 import { codexAdapter } from '@/server/agents/codex';
 import * as db from '@/server/db';
 import { createInterview, createProject, flagUpstream, getDocument, insertEmptyDocuments, listDocuments, updateDocument } from '@/server/db';
-import { getRun, acquireRun } from '@/server/runtime';
+import { getRun, acquireRun, cancelRun } from '@/server/runtime';
 import { PUT as docPUT, DELETE as docDELETE } from '@/app/api/projects/[id]/documents/[path]/route';
 import { POST as generatePOST } from '@/app/api/projects/[id]/documents/[path]/generate/route';
 import { POST as undoPOST } from '@/app/api/projects/[id]/documents/[path]/undo/route';
@@ -118,30 +118,46 @@ describe('생성 (generate)', () => {
     expect(getRun(p.id)).toBeNull();
   });
 
-  it('생성 중 연결이 끊기면 본문·상태·이전 본문을 바꾸지 않고 잠금을 푼다', async () => {
-    process.env.FAKE_MODE = 'slow';
+  it('연결이 끊겨도 마크다운 생성은 이어져 저장된다', async () => {
     const p = newProject();
     setDoc(p.id, '0-PRODUCT.md', { content: '원본', status: 'draft' });
+    const original = codexAdapter.run.bind(codexAdapter);
+    vi.spyOn(codexAdapter, 'run').mockImplementationOnce(async (i) => {
+      await new Promise((r) => setTimeout(r, 100));
+      return original(i);
+    });
     const ac = new AbortController();
     const res = await generate(p.id, '0-PRODUCT.md', { agent: 'codex' }, ac.signal);
     await waitUntil(() => getRun(p.id) !== null);
     ac.abort();
     await readSse(res);
     await waitUntil(() => getRun(p.id) === null);
+    expect(getDocument(p.id, '0-PRODUCT.md')).toMatchObject({ status: 'draft', previousContent: '원본' });
+    expect(getDocument(p.id, '0-PRODUCT.md')!.content).toContain('# 제품');
+  });
+
+  it('취소하면 본문·상태·이전 본문을 바꾸지 않고 잠금을 푼다', async () => {
+    process.env.FAKE_MODE = 'slow';
+    const p = newProject();
+    setDoc(p.id, '0-PRODUCT.md', { content: '원본', status: 'draft' });
+    const res = await generate(p.id, '0-PRODUCT.md', { agent: 'codex' });
+    await waitUntil(() => getRun(p.id) !== null);
+    await cancelRun(p.id);
+    await readSse(res);
+    await waitUntil(() => getRun(p.id) === null);
     expect(getDocument(p.id, '0-PRODUCT.md')).toMatchObject({ content: '원본', status: 'draft', previousContent: null });
   });
 
-  it('경합: CLI가 끝난 직후 저장 전에 끊기면 저장하지 않는다', async () => {
+  it('경합: CLI가 끝난 직후 저장 전에 취소하면 저장하지 않는다', async () => {
     const p = newProject();
     setDoc(p.id, '0-PRODUCT.md', { content: '원본', status: 'draft' });
-    const ac = new AbortController();
     const original = codexAdapter.run.bind(codexAdapter);
     vi.spyOn(codexAdapter, 'run').mockImplementationOnce(async (i) => {
       const r = await original(i);
-      ac.abort();
+      void cancelRun(p.id);
       return r;
     });
-    const events = await readSse(await generate(p.id, '0-PRODUCT.md', { agent: 'codex' }, ac.signal));
+    const events = await readSse(await generate(p.id, '0-PRODUCT.md', { agent: 'codex' }));
     expect(events.some((e) => e.event === 'done')).toBe(false);
     expect(getDocument(p.id, '0-PRODUCT.md')).toMatchObject({ content: '원본', status: 'draft', previousContent: null });
     await waitUntil(() => getRun(p.id) === null);
@@ -186,7 +202,7 @@ describe('생성 (generate)', () => {
     const unapprove = await unapprovePOST(jsonReq('POST', u(p.id, '0-PRODUCT.md', 'unapprove')), c(p.id, '0-PRODUCT.md'));
     expect((await json(unapprove)).code).toBe('busy');
 
-    ac.abort();
+    await cancelRun(p.id);
     await readSse(res);
     await waitUntil(() => getRun(p.id) === null);
   });

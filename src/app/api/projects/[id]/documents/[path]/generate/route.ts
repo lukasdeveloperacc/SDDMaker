@@ -6,7 +6,7 @@ import { flagUpstream, getDocument, listDocuments, tx, updateDocument } from '@/
 import { generationPrompt, resolveDocRef, runDirOf, viewOf } from '@/server/documents';
 import { apiError, gateError, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
-import { acquireRun } from '@/server/runtime';
+import { acquireRun, acquireSharedRun } from '@/server/runtime';
 
 export const runtime = 'nodejs';
 
@@ -33,7 +33,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
     return apiError(400, 'invalid_input', '본문이 없으면 피드백으로 다시 생성할 수 없습니다');
   }
 
-  const handle = acquireRun(ref.projectId, 'document', ref.path);
+  // 요구사항 문서는 서로 입력이 겹치지 않아 함께 만들 수 있다.
+  const handle = kindOf(ref.path) === 'requirement' ? acquireSharedRun(ref.projectId, ref.path) : acquireRun(ref.projectId, 'document', ref.path);
   if (!handle) return apiError(409, 'busy', '이 프로젝트에서 다른 작업이 실행 중입니다');
   const isScreen = kindOf(ref.path) === 'screen';
 
@@ -41,6 +42,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
     req,
     handle,
     agent,
+    detached: !isScreen, // 마크다운은 서버가 저장하므로 화면을 떠나도 이어 간다
     execute: async ({ onDelta, signal }) => {
       const dir = runDirOf(ref.projectId); // 클론이 없으면 프롬프트를 만들기 전에 멈춘다
       const prompt = generationPrompt(ref.projectId, ref.path, feedback);

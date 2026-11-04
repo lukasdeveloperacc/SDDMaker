@@ -18,7 +18,7 @@ import { getRun } from '@/server/runtime';
 import { apiError, parseId } from '@/server/http';
 import { repoDir } from '@/server/env';
 import { AgentError } from './agents/exec';
-import { buildDocumentPrompt, repoEvidencePrompt } from './prompts';
+import { buildDesignPrompt, buildDocumentPrompt, repoEvidencePrompt } from './prompts';
 import { readRepoContext } from './repo-context';
 import { batchView } from './batch';
 import {
@@ -26,6 +26,7 @@ import {
   batchInputDocsFor,
   buildDocumentViews,
   computeMissing,
+  designInputDocs,
   exportGate,
   inputDocsFor,
   nameOf,
@@ -118,6 +119,21 @@ export function generationRepoEvidence(projectId: number): string {
   return getProject(projectId)?.repo ? repoEvidencePrompt(readRepoContext(projectId, batchPaths(listDocuments(projectId)))) : '';
 }
 
+// 디자인 문서 생성 프롬프트. base는 화면에서 다듬던 문서(없으면 null), 있으면 그것을 반영해 만든다.
+export function designPrompt(projectId: number, base: string | null, feedback?: string): string {
+  const project = getProject(projectId);
+  if (!project) throw new Error(`project ${projectId} not found`);
+  const rec = getInterview(projectId);
+  return buildDesignPrompt({
+    idea: project.idea,
+    summary: rec?.status === 'approved' ? rec.summary : null,
+    designMd: base,
+    inputDocs: designInputDocs(listDocuments(projectId)),
+    feedback,
+    repo: project.repo,
+  });
+}
+
 // 생성 프롬프트 조립. feedback이 있으면 현재 본문을 함께 넣는다.
 export function generationPrompt(projectId: number, path: string, feedback?: string, batch = false): string {
   const project = getProject(projectId);
@@ -126,7 +142,12 @@ export function generationPrompt(projectId: number, path: string, feedback?: str
   const rec = getInterview(projectId);
   const screens = screenFiles(docs);
   const current = feedback === undefined ? undefined : docs.find((d) => d.path === path)?.content;
-  const context = project.repo ? readRepoContext(projectId, [path, ...batchPaths(docs).filter((p) => p !== path)]) : undefined;
+  const context = project.repo && !path.startsWith('screens/') ? readRepoContext(projectId, [path, ...batchPaths(docs).filter((p) => p !== path)]) : undefined;
+  // 기준 화면: 이미 승인된 다른 화면 하나(이름 순 첫째). 새 화면이 같은 모양을 따르게 한다.
+  // shortcut: 화면 HTML을 자르지 않고 통째로 넣는다. 프롬프트가 너무 커지면 앞부분만 넣는다.
+  const anchor = path.startsWith('screens/')
+    ? screens.map((p) => docs.find((d) => d.path === p)!).find((d) => d.path !== path && d.status === 'approved')
+    : undefined;
   return buildDocumentPrompt({
     path,
     idea: project.idea,
@@ -137,8 +158,9 @@ export function generationPrompt(projectId: number, path: string, feedback?: str
     screenFiles: screens,
     current,
     feedback,
+    ...(anchor ? { anchor: { path: anchor.path, content: anchor.content } } : {}),
     ...(project.repo
-      ? { repo: { name: project.repo, baseline: context!.baselineCommit }, repoContext: context }
+      ? { repo: { name: project.repo, ...(context ? { baseline: context.baselineCommit } : {}) }, ...(context ? { repoContext: context } : {}) }
       : {}),
   });
 }

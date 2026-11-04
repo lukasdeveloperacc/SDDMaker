@@ -1,16 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { AgentName } from '@/lib/contract';
 import { docApiPath } from '@/lib/contract';
 import { api, ApiRequestError } from '@/lib/api';
 import { extractHtml, missingScreenLinks, sanitizeHtml, screenLinkTarget } from '@/lib/screens/html';
 import { truncateLabel } from '@/lib/screens/geometry';
 import { useAnnotations } from '@/lib/screens/annotations-store';
 import { useAgentRun } from '@/lib/use-agent-run';
-import { AgentPicker } from '@/components/AgentPicker';
+import { useAgentChoice } from '@/components/AgentChoice';
 import { DocActions } from '@/components/DocActions';
 import { RunStatus } from '@/components/RunStatus';
+import { DESIGN_KEY } from '@/components/StageNav';
 import { ScreenPreview } from '@/components/screens/ScreenPreview';
 import type { PanelProps } from '@/components/documents/DocumentPanel';
 import { AnnotationPanel, type DrawInfo, type Highlight, type PickInfo } from '@/components/screens/AnnotationPanel';
@@ -44,6 +44,7 @@ export function ScreenPanel({
   detail,
   path,
   refresh,
+  onNavigate,
   trail,
   onLinkNavigate,
   onBack,
@@ -54,7 +55,7 @@ export function ScreenPanel({
     [detail],
   );
 
-  const [agent, setAgent] = useState<AgentName>('claude');
+  const agent = useAgentChoice();
   const run = useAgentRun();
   const [annotations] = useAnnotations(projectId, path);
   const [width, setWidth] = useState<1280 | 390>(1280);
@@ -69,7 +70,6 @@ export function ScreenPanel({
     missing: string[];
   } | null>(null);
   const [feedback, setFeedback] = useState('');
-  const [designMd, setDesignMd] = useState('');
   // 전체 HTML 편집 창의 내용. null이면 편집 중이 아니다. 닫아도 남아 있으면 "저장 안 한 변경"이다.
   const [draft, setDraft] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -168,18 +168,6 @@ export function ScreenPanel({
   }
 
   const gate = doc.generate;
-  async function saveDesign() {
-    setBusy(true);
-    setMsg(null);
-    try {
-      await api('PUT', `/api/projects/${projectId}/design`, { designMd });
-      await refresh();
-    } catch (error) {
-      setMsg(errorOf(error));
-    } finally {
-      setBusy(false);
-    }
-  }
   const gateNotice = !gate.ok && (
     <Notice tone="warn">
       {gate.code === 'design_required' ? (
@@ -201,7 +189,6 @@ export function ScreenPanel({
 
   const generatorBlock = (
     <div className="stack">
-      <AgentPicker value={agent} onChange={setAgent} disabled={locked} />
       <RunStatus run={run} agent={agent} />
     </div>
   );
@@ -240,10 +227,11 @@ export function ScreenPanel({
         <div className="stack">
           {gateNotice}
           {!gate.ok && gate.code === 'design_required' && (
-            <form className="stack" onSubmit={(event) => { event.preventDefault(); void saveDesign(); }}>
-              <TextArea label="디자인 문서" value={designMd} onChange={(event) => setDesignMd(event.target.value)} disabled={locked} />
-              <div><Button type="submit" variant="secondary" disabled={locked || !designMd.trim()}>저장</Button></div>
-            </form>
+            <div>
+              <Button variant="secondary" onClick={() => onNavigate(DESIGN_KEY)}>
+                디자인 문서 만들기
+              </Button>
+            </div>
           )}
           {generatorBlock}
           <Button variant="primary" disabled={locked || !gate.ok} onClick={() => void generate()}>

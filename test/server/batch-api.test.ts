@@ -6,6 +6,8 @@ import { batchView } from '@/server/batch';
 import { batchInputDocsFor } from '@/server/doc-rules';
 import { acquireRun, cancelRun, getRun } from '@/server/runtime';
 import { codexAdapter } from '@/server/agents/codex';
+import { currentAgentOptions } from '@/server/agents/options';
+import { OPTIONS_HEADER } from '@/lib/agent-options';
 import { repoDir } from '@/server/env';
 import { generationPrompt, projectDetail } from '@/server/documents';
 import { POST, DELETE } from '@/app/api/projects/[id]/batch/route';
@@ -48,6 +50,22 @@ async function run(id: number) { return readSse(await POST(req(), context(id)));
 async function wait(cond: () => boolean) { for (let i = 0; i < 200; i++) { if (cond()) return; await new Promise((r) => setTimeout(r, 10)); } throw new Error('timeout'); }
 
 describe('repository batch', () => {
+  it('runs every draft with the model and effort chosen on the page', async () => {
+    const p = project();
+    const seen: unknown[] = [];
+    vi.spyOn(codexAdapter, 'run').mockImplementation(async (input) => {
+      seen.push(currentAgentOptions());
+      const path = /대상 문서: (.*)/.exec(input.prompt)![1];
+      return { text: path === '0-PRODUCT.md' ? '[active](requirements/active.md)' : `# ${path}`, sessionId: 'batch-test' };
+    });
+    const r = new Request('http://localhost/api', { method: 'POST', body: JSON.stringify({ agent: 'codex' }),
+      headers: { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json',
+        [OPTIONS_HEADER]: JSON.stringify({ codex: { model: 'gpt-6.1-sol', effort: 'low' } }) } });
+    expect((await readSse(await POST(r, context(p.id)))).at(-1)?.event).toBe('done');
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.every((o) => JSON.stringify(o) === JSON.stringify({ model: 'gpt-6.1-sol', effort: 'low' }))).toBe(true);
+  });
+
   it('generates every applicable draft in order without approvals or screens; manual gates remain', async () => {
     const p = project(); fake();
     const events = await run(p.id);

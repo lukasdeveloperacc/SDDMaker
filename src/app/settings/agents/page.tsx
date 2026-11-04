@@ -1,4 +1,5 @@
 import { AgentConnections } from '@/components/AgentConnections';
+import { DefaultRunSettings } from '@/components/DefaultRunSettings';
 
 export default function Page() {
   return (
@@ -8,6 +9,7 @@ export default function Page() {
         <p className="caption">문서 생성에 쓸 AI 에이전트와 GitHub 계정을 연결하세요.</p>
       </header>
       <AgentConnections />
+      <DefaultRunSettings />
     </section>
   );
 }

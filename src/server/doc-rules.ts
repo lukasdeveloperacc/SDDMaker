@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import {
+  MAX_PARALLEL,
   BASE_DOCS,
   BASELINE_DOC,
   CHANGE_DOC,
@@ -202,7 +203,7 @@ export function buildDocumentViews(input: {
   docs: DocumentRecord[];
   interviewStatus: InterviewStatus | null;
   hasDesign: boolean;
-  running: { kind: RunKind; path: string | null } | null;
+  running: { kind: RunKind; path: string | null; progress?: { active: string[] }; shared?: boolean } | null;
 }): DocumentView[] {
   const byPath = new Map(input.docs.map((d) => [d.path, d] as const));
   const missing = computeMissing(input.docs);
@@ -215,7 +216,7 @@ export function buildDocumentViews(input: {
         : d.path === '4-USERFLOW.md'
           ? extractLinks(d.content, 'screens')
           : null;
-    const running = input.running !== null && input.running.path === d.path;
+    const running = input.running !== null && (input.running.path === d.path || !!input.running.progress?.active.includes(d.path));
     return {
       path: d.path,
       kind,
@@ -229,7 +230,8 @@ export function buildDocumentViews(input: {
       missingFromList: missing.has(d.path),
       canUndo: d.previousContent !== null,
       running,
-      generate: generateGate(d, ctx, input.running !== null),
+      // 요구사항 문서끼리는 함께 만들 수 있다 (공유 잠금, 동시 MAX_PARALLEL개까지)
+      generate: generateGate(d, ctx, input.running !== null && !(input.running.shared && kind === 'requirement' && (input.running.progress?.active.length ?? 0) < MAX_PARALLEL)),
       approve: approveGate(d, ctx, running || input.running?.kind === 'batch', links),
       links,
     };
@@ -259,6 +261,23 @@ export function inputDocsFor(path: string, docs: DocumentRecord[]): { path: stri
     picked = approved.filter((d) => kindOf(d.path) !== 'screen');
   }
   return picked.sort(byStageThenPath).map((d) => ({ path: d.path, content: d.content }));
+}
+
+// 디자인 문서 생성은 화면 정의서 생성과 조건·입력이 같다 (디자인 문서 있음만 뺀다).
+// 존재하지 않는 화면 경로를 대리로 써서 같은 규칙을 다시 쓰지 않는다.
+const AS_SCREEN = 'screens/design.html';
+
+export function designGate(docs: DocumentRecord[]): Gate {
+  return toGate(creationCheck(AS_SCREEN, {
+    byPath: new Map(docs.map((d) => [d.path, d] as const)),
+    missing: computeMissing(docs),
+    interviewStatus: null,
+    hasDesign: true,
+  }));
+}
+
+export function designInputDocs(docs: DocumentRecord[]): { path: string; content: string }[] {
+  return inputDocsFor(AS_SCREEN, docs);
 }
 
 // 화면 파일 목록 ('screens/home.html'). 목록에서 빠진 화면은 뺀다.

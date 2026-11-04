@@ -1,17 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { AgentName, BatchEvent, ProjectDetail } from '@/lib/contract';
-import { AgentPicker } from '@/components/AgentPicker';
+import type { BatchEvent, ProjectDetail } from '@/lib/contract';
+import { useAgentChoice } from '@/components/AgentChoice';
 import { Button, Modal, Notice } from '@/components/ui';
 import { api, ApiRequestError } from '@/lib/api';
 import { readSse } from '@/lib/sse-client';
+import { agentHeaders } from '@/lib/agent-options';
+import { beginRun } from '@/lib/run-activity';
 
 export function BatchPanel({ projectId, detail, refresh }: { projectId: number; detail: ProjectDetail; refresh: () => Promise<void> }) {
-  const [agent, setAgent] = useState<AgentName>('claude');
+  const agent = useAgentChoice();
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [liveText, setLiveText] = useState<{ path: string; text: string } | null>(null);
   const [review, setReview] = useState<{ token: string; paths: string[] } | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -32,10 +33,10 @@ export function BatchPanel({ projectId, detail, refresh }: { projectId: number; 
     controller.current = abort;
     setStreaming(true);
     setError(null);
-    setLiveText(null);
+    const endRun = beginRun();
     try {
       const response = await fetch(`/api/projects/${projectId}/batch`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent }), signal: abort.signal,
+        method: 'POST', headers: agentHeaders(), body: JSON.stringify({ agent }), signal: abort.signal,
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -43,9 +44,6 @@ export function BatchPanel({ projectId, detail, refresh }: { projectId: number; 
       }
       await readSse(response, (message) => {
         const event = message as BatchEvent;
-        if (event.event === 'delta') setLiveText((current) => current?.path === event.data.path
-          ? { ...current, text: current.text + event.data.text }
-          : { path: event.data.path, text: event.data.text });
         if (event.event === 'error') setError(`${event.data.path ? `${event.data.path}: ` : ''}${event.data.message}`);
         if (event.event === 'progress' || event.event === 'done') void refresh();
       });
@@ -54,6 +52,7 @@ export function BatchPanel({ projectId, detail, refresh }: { projectId: number; 
     } finally {
       if (controller.current === abort) controller.current = null;
       setStreaming(false);
+      endRun();
       await refresh();
     }
   }
@@ -93,12 +92,9 @@ export function BatchPanel({ projectId, detail, refresh }: { projectId: number; 
     }
   }
   return (
-    <section className="stack" aria-labelledby="batch-title">
-      <h2 className="h3" id="batch-title">저장소 문서 초안</h2>
-      <p className="caption">기존 내용은 유지하고 비어 있는 문서만 순서대로 초안으로 만듭니다. 화면 정의서는 만들지 않습니다.</p>
-      {!interviewDone && <Notice tone="warn" title="인터뷰를 먼저 마치세요">인터뷰를 승인하거나 건너뛰면 시작할 수 있습니다. 인터뷰 단계에서 직접 건너뛸 수 있습니다.</Notice>}
+    <section className="stack batch-side" aria-label="저장소 문서 초안">
+      {!interviewDone && <Notice tone="warn" title="인터뷰를 먼저 마치세요">인터뷰를 승인하거나 건너뛰면 시작할 수 있습니다.</Notice>}
       <div className="row">
-        <AgentPicker value={agent} onChange={setAgent} disabled={batchActive || detail.running !== null || approving} />
         <Button disabled={batchActive || detail.running !== null || approving || !interviewDone || batch?.state === 'completed'} onClick={() => void start()}>
           {batch?.state === 'partial' ? '남은 초안 이어 만들기' : batch?.state === 'completed' ? '전체 초안 완료' : '전체 초안 만들기'}
         </Button>
@@ -110,7 +106,6 @@ export function BatchPanel({ projectId, detail, refresh }: { projectId: number; 
         {batch.state === 'completed' && <p className="caption" role="status">초안 생성이 끝났습니다. 각 문서를 확인한 뒤 승인하세요.</p>}
       </div>}
       {error && <Notice tone="error" title="초안 생성 오류"><p className="notice-body">{error}</p><p className="caption">저장된 초안은 문서 목록에서 확인할 수 있습니다.</p></Notice>}
-      {streaming && liveText && <div className="stack" aria-live="polite"><p className="caption">현재 생성 중: {liveText.path}</p><pre className="run-stream" aria-label={`${liveText.path} 생성 내용`} style={{ maxHeight: 220, overflowY: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{liveText.text}</pre></div>}
       {reviewable.length > 0 && <div className="row">
         <Button variant="secondary" disabled={batchActive || detail.running !== null || approving || batch?.state !== 'completed' || !batch.reviewToken || flaggedActive.length > 0} onClick={() => { setReview({ token: batch!.reviewToken, paths: reviewable }); setReviewError(null); }}>검토한 초안 일괄 승인</Button>
         {flaggedActive.length > 0 && <p className="caption">앞 문서 변경을 확인해야 일괄 승인할 수 있습니다: {flaggedActive.join(', ')}</p>}

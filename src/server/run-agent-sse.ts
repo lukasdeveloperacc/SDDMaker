@@ -1,5 +1,6 @@
 import { ensureReady } from './agents';
 import { AgentError } from './agents/exec';
+import { withAgentOptions } from './agents/options';
 import { createSse } from './sse';
 import type { RunHandle } from './runtime';
 import type { AgentName } from '@/lib/contract';
@@ -10,16 +11,20 @@ export function runAgentSse(opts: {
   req: Request;
   handle: RunHandle;
   agent: AgentName;
+  // true면 연결이 끊겨도 실행을 이어 간다 (서버가 결과를 저장하는 실행). 취소는 cancelRun으로만 한다.
+  detached?: boolean;
   execute: (ctx: { onDelta: (text: string) => void; signal: AbortSignal }) => Promise<string>; // 저장까지 끝낸 뒤 done에 보낼 text를 돌려줌
 }): Response {
   const { handle } = opts;
   const sse = createSse(opts.req.signal);
   // 연결이 끊기거나 cancel되면 자식 프로세스를 끝낸다.
   const onDisconnect = () => handle.controller.abort();
-  sse.signal.addEventListener('abort', onDisconnect, { once: true });
-  if (sse.signal.aborted) onDisconnect();
+  if (!opts.detached) {
+    sse.signal.addEventListener('abort', onDisconnect, { once: true });
+    if (sse.signal.aborted) onDisconnect();
+  }
 
-  void (async () => {
+  void withAgentOptions(opts.req, opts.agent, async () => {
     try {
       handle.controller.signal.throwIfAborted();
       await ensureReady(opts.agent);
@@ -42,7 +47,7 @@ export function runAgentSse(opts: {
       sse.signal.removeEventListener('abort', onDisconnect);
       sse.close();
     }
-  })();
+  });
 
   return sse.response;
 }

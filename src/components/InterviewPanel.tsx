@@ -5,7 +5,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { AgentName, Interview, InterviewMessage, InterviewUnapproveResponse, ProjectDetail } from '@/lib/contract';
 import { api, ApiRequestError } from '@/lib/api';
 import { useAgentRun } from '@/lib/use-agent-run';
-import { AgentPicker } from '@/components/AgentPicker';
+import { useAgentChoice } from '@/components/AgentChoice';
 import { RunStatus } from '@/components/RunStatus';
 import { MarkdownEditor } from '@/components/documents/MarkdownEditor';
 import { Markdown } from '@/components/Markdown';
@@ -29,18 +29,42 @@ function errorText(e: unknown): string {
 const list: CSSProperties = { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' };
 const pre: CSSProperties = { margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 
-function Transcript({ messages, agent }: { messages: InterviewMessage[]; agent: AgentName }) {
+function Turn({ m, agent }: { m: InterviewMessage; agent: AgentName }) {
   return (
-    <ol style={list} aria-label="인터뷰 대화">
-      {messages.map((m) => (
-        <li key={m.id} className="card">
-          <p className="eyebrow caption" style={{ margin: '0 0 var(--space-xxs)' }}>
-            {m.role === 'agent' ? (agent === 'claude' ? 'Claude 질문' : 'Codex 질문') : '내 답변'}
-          </p>
-          {m.role === 'agent' ? <Markdown source={m.content} /> : <p style={pre}>{m.content}</p>}
-        </li>
-      ))}
-    </ol>
+    <li className="card">
+      <p className="eyebrow caption" style={{ margin: '0 0 var(--space-xxs)' }}>
+        {m.role === 'agent' ? (agent === 'claude' ? 'Claude 질문' : 'Codex 질문') : '내 답변'}
+      </p>
+      {m.role === 'agent' ? <Markdown source={m.content} /> : <p style={pre}>{m.content}</p>}
+    </li>
+  );
+}
+
+// 질문과 그 답변을 한 쪽으로 묶어 이전/다음으로 넘겨 본다 (새 메시지가 오면 마지막 쪽으로 간다).
+function Transcript({ messages, agent }: { messages: InterviewMessage[]; agent: AgentName }) {
+  const pages: InterviewMessage[][] = [];
+  for (const m of messages) {
+    if (m.role === 'agent' || pages.length === 0) pages.push([m]);
+    else pages[pages.length - 1].push(m);
+  }
+  const lastIndex = pages.length - 1;
+  const [pick, setPick] = useState<{ at: number; page: number } | null>(null);
+  const page = pick && pick.at === messages.length ? Math.min(pick.page, lastIndex) : lastIndex;
+  const go = (p: number) => setPick({ at: messages.length, page: p });
+  if (pages.length === 0) return null;
+  return (
+    <div className="stack">
+      {pages.length > 1 && (
+        <div className="row" role="navigation" aria-label="질문 이동">
+          <Button variant="utility" disabled={page === 0} onClick={() => go(page - 1)}>&lt; 이전</Button>
+          <span className="caption">{page + 1} / {pages.length}</span>
+          <Button variant="utility" disabled={page === lastIndex} onClick={() => go(page + 1)}>다음 &gt;</Button>
+        </div>
+      )}
+      <ol style={list} aria-label="인터뷰 대화">
+        {pages[page].map((m) => <Turn key={m.id} m={m} agent={agent} />)}
+      </ol>
+    </div>
   );
 }
 
@@ -64,7 +88,7 @@ export function InterviewPanel({
   const awaitingRetry = phase === 'chat' && lastRole === 'user';
   const agent: AgentName = interview?.agent ?? 'claude';
 
-  const [startAgent, setStartAgent] = useState<AgentName>('claude');
+  const choice = useAgentChoice(); // 새로 시작할 때 쓸 에이전트 (진행 중인 인터뷰는 시작한 에이전트로 이어진다)
   const [draft, setDraft] = useState('');
   const [summaryDraft, setSummaryDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,8 +107,9 @@ export function InterviewPanel({
 
   // 실행 한 번 뒤에는 상세를 다시 읽는다 (실패해도 저장 여부를 화면에 맞춘다).
   const runThenRefresh = async (url: string, body: unknown) => {
-    await run.start(url, body);
+    const result = await run.start(url, body);
     await refresh();
+    return result;
   };
 
   const act = async (fn: () => Promise<unknown>) => {
@@ -101,11 +126,12 @@ export function InterviewPanel({
   };
 
   const skip = () => act(() => api('POST', `${base}/skip`));
-  const start = () => runThenRefresh(base, { agent: startAgent });
-  const send = () => {
+  const start = () => runThenRefresh(base, { agent: choice });
+  const send = async () => {
     const content = draft.trim();
     if (content === '') return;
-    return runThenRefresh(`${base}/messages`, { content });
+    // 성공하면 새 질문 아래에 이전 답변이 남지 않게 비운다 (실패해도 저장됐으면 아래 effect가 비운다).
+    if ((await runThenRefresh(`${base}/messages`, { content })).ok) setDraft('');
   };
   const retry = () => runThenRefresh(`${base}/messages`, {});
   const summarize = () => runThenRefresh(`${base}/summary`, {});
@@ -125,7 +151,7 @@ export function InterviewPanel({
   const statusNotes = (
     <>
       {error && <Notice tone="error" title="오류">{error}</Notice>}
-      <RunStatus run={run} agent={phase === 'start' ? startAgent : agent} />
+      <RunStatus run={run} agent={phase === 'start' ? choice : agent} />
     </>
   );
 
@@ -141,7 +167,6 @@ export function InterviewPanel({
             <strong>인터뷰에서 다룰 내용</strong>
             <p className="caption">대상 사용자, 구체적인 문제, MVP 포함·제외 범위, 우선순위와 의존성, 측정 가능한 성공 기준, 미정인 가정을 하나씩 확인합니다.</p>
           </aside>
-          <AgentPicker value={startAgent} onChange={setStartAgent} disabled={locked} />
           <div className="row">
             <Button variant="primary" disabled={locked} onClick={() => void start()}>
               인터뷰 시작
@@ -157,7 +182,6 @@ export function InterviewPanel({
   } else if (phase === 'chat') {
     body = (
       <div className="stack">
-        <AgentPicker value={agent} onChange={() => {}} disabled lockedTo={agent} />
         <Transcript messages={messages} agent={agent} />
         {awaitingRetry ? (
           <div className="row">

@@ -1,8 +1,9 @@
-import { useId, type ReactNode } from 'react';
+import { Fragment, useId, type ReactNode } from 'react';
 import type { DocumentView, Interview, ProjectDetail } from '@/lib/contract';
 import { Badge } from '@/components/ui';
 
 export const INTERVIEW_KEY = 'interview';
+export const DESIGN_KEY = 'design';
 export const EXPORT_KEY = 'export';
 
 // 인터뷰가 끝났는지(승인 또는 건너뜀). 끝나야 기본 문서를 만들 수 있다.
@@ -11,10 +12,17 @@ export function isInterviewDone(interview: Interview | null): boolean {
 }
 
 // 처음 열었을 때 고를 단계: 아직 끝나지 않은 첫 단계. 목록에서 빠진 문서는 막지 않는다.
+// 승인된 화면이 아직 없으면 화면 대신 디자인 단계를 연다. 기준 화면을 만드는 동안 이 단계에 머물고,
+// 기준 화면을 승인하면(다른 단계처럼) 다음 화면으로 넘어간다.
 export function defaultStageKey(detail: ProjectDetail): string {
   if (!isInterviewDone(detail.interview)) return INTERVIEW_KEY;
   const open = detail.documents.find((d) => d.status !== 'approved' && !d.missingFromList);
+  if (open?.kind === 'screen' && !detail.documents.some((d) => d.kind === 'screen' && d.status === 'approved')) return DESIGN_KEY;
   return open ? open.path : EXPORT_KEY;
+}
+
+export function hasDesign(detail: ProjectDetail): boolean {
+  return (detail.project.designMd ?? '').trim() !== '';
 }
 
 const INTERVIEW_TEXT: Record<Interview['status'] | 'none', { text: string; tone: 'neutral' | 'success' | 'info' }> = {
@@ -25,7 +33,7 @@ const INTERVIEW_TEXT: Record<Interview['status'] | 'none', { text: string; tone:
   skipped: { text: '건너뜀', tone: 'neutral' },
 };
 
-const STATUS_TEXT: Record<DocumentView['status'], { text: string; tone: 'neutral' | 'success' | 'info' }> = {
+export const STATUS_TEXT: Record<DocumentView['status'], { text: string; tone: 'neutral' | 'success' | 'info' }> = {
   empty: { text: '비어 있음', tone: 'neutral' },
   draft: { text: '초안', tone: 'info' },
   approved: { text: '승인', tone: 'success' },
@@ -37,8 +45,10 @@ function docLabel(d: DocumentView): string {
 
 function docBadges(d: DocumentView): ReactNode[] {
   const s = STATUS_TEXT[d.status];
-  const out: ReactNode[] = [<Badge key="status" tone={s.tone}>{s.text}</Badge>];
-  if (d.running) out.push(<Badge key="run" tone="info">실행 중</Badge>);
+  // 생성 중에는 상태 배지 대신 움직이는 배지 하나만 보여 준다 (줄이 늘어나지 않게).
+  const out: ReactNode[] = d.running
+    ? [<span key="run" className="badge badge-info badge-live">생성 중</span>]
+    : [<Badge key="status" tone={s.tone}>{s.text}</Badge>];
   if (d.upstreamChanged) out.push(<Badge key="up" tone="warn">앞 문서 변경됨</Badge>);
   if (d.missingFromList) out.push(<Badge key="miss" tone="warn">목록에서 빠짐</Badge>);
   return out;
@@ -110,6 +120,9 @@ export function StageNav({
   const exportOk = detail.exportGate.ok;
   // 저장소 프로젝트는 화면 정의서를 만들지 않는다.
   const repo = detail.project.repo;
+  // 디자인 단계: 화면 목록이 정해지면(저장소 프로젝트는 처음부터) 나타난다. 디자인 문서와 기준 화면을 함께 만든다.
+  const designStage = !!repo || docs('screen').length > 0;
+  const designText = hasDesign(detail) ? '있음' : '없음';
 
   return (
     <nav aria-label="단계" className="stage-nav">
@@ -117,10 +130,13 @@ export function StageNav({
         <label htmlFor={selectId}>단계</label>
         <select id={selectId} value={selected} onChange={(event) => onSelect(event.target.value)}>
           <option value={INTERVIEW_KEY}>인터뷰 · {INTERVIEW_TEXT[ivKey].text}</option>
-          {(['base', 'requirement', ...(repo ? [] : ['screen' as const]), 'change'] as const).map((kind) => (
-            <optgroup key={kind} label={{ base: '기본 문서', requirement: '요구사항 문서', screen: '화면 정의서', change: '변경 기록' }[kind]}>
-              {docs(kind).map((doc) => <option key={doc.path} value={doc.path}>{docLabel(doc)} · {STATUS_TEXT[doc.status].text}{doc.running ? ' · 실행 중' : ''}{doc.upstreamChanged ? ' · 앞 문서 변경됨' : ''}{doc.missingFromList ? ' · 목록에서 빠짐' : ''}</option>)}
-            </optgroup>
+          {(['base', 'requirement', 'screen', 'change'] as const).map((kind) => (
+            <Fragment key={kind}>
+              {kind === 'screen' && designStage && <option value={DESIGN_KEY}>디자인 문서 · {designText}</option>}
+              <optgroup label={{ base: '기본 문서', requirement: '요구사항 문서', screen: '화면 정의서', change: '변경 기록' }[kind]}>
+                {docs(kind).map((doc) => <option key={doc.path} value={doc.path}>{docLabel(doc)} · {STATUS_TEXT[doc.status].text}{doc.running ? ' · 실행 중' : ''}{doc.upstreamChanged ? ' · 앞 문서 변경됨' : ''}{doc.missingFromList ? ' · 목록에서 빠짐' : ''}</option>)}
+              </optgroup>
+            </Fragment>
           ))}
           <option value={EXPORT_KEY}>내보내기 · {exportOk ? '가능' : '확인 필요'}</option>
         </select>
@@ -149,15 +165,24 @@ export function StageNav({
         )}
       </Group>
 
-      {!repo && (
-        <Group title="화면 정의서">
-          {docs('screen').length > 0 ? (
-            docs('screen').map(itemFor)
-          ) : (
-            <li className="caption">화면 목록이 정해지면 나타납니다.</li>
-          )}
+      {designStage && (
+        <Group title="디자인">
+          <Item
+            label="디자인 문서"
+            selected={selected === DESIGN_KEY}
+            onSelect={() => onSelect(DESIGN_KEY)}
+            badges={[<Badge key="design" tone={hasDesign(detail) ? 'info' : 'neutral'}>{designText}</Badge>]}
+          />
         </Group>
       )}
+
+      <Group title="화면 정의서">
+        {docs('screen').length > 0 ? (
+          docs('screen').map(itemFor)
+        ) : (
+          <li className="caption">화면 목록이 정해지면 나타납니다.</li>
+        )}
+      </Group>
 
       <Group title="변경 기록">{docs('change').map(itemFor)}</Group>
 

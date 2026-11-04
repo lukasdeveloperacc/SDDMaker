@@ -5,6 +5,7 @@ import { batchPaths, buildDocumentViews, extractLinks, stripFence } from './doc-
 import { batchRuntime, type RunHandle } from './runtime';
 import { apiError, gateError } from './http';
 import { ensureReady, getAdapter, AgentError } from './agents';
+import { withAgentOptions } from './agents/options';
 import { generationPrompt, runDirOf } from './documents';
 import { createSse } from './sse';
 
@@ -55,7 +56,7 @@ export function runBatch(req: Request, handle: RunHandle, agent: AgentName): Res
   if (sse.signal.aborted) disconnect();
   errors.delete(id);
   handle.setBatch(null);
-  void (async () => {
+  void withAgentOptions(req, agent, async () => {
     let currentPath: string | undefined;
     try {
       const signal = handle.controller.signal;
@@ -94,6 +95,7 @@ export function runBatch(req: Request, handle: RunHandle, agent: AgentName): Res
           updateDocument(id, currentPath!, { content: text, status: 'draft', agent, upstreamChanged: false,
             ...(cur.content !== '' ? { previousContent: cur.content } : {}) });
           if (currentPath === '0-PRODUCT.md') insertEmptyDocuments(id, extractLinks(text, 'requirements').names.map((n) => `requirements/${n}.md`));
+          if (currentPath === '4-USERFLOW.md') insertEmptyDocuments(id, extractLinks(text, 'screens').names.map((n) => `screens/${n}.html`)); // 화면은 일괄 초안이 만들지 않고 행만 둔다
         });
         sse.send('progress', { batch: batchView(id) });
       }
@@ -112,7 +114,7 @@ export function runBatch(req: Request, handle: RunHandle, agent: AgentName): Res
       sse.signal.removeEventListener('abort', disconnect);
       sse.close();
     }
-  })();
+  });
   return sse.response;
 }
 

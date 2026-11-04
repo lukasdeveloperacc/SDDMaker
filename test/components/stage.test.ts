@@ -90,15 +90,62 @@ describe('StageNav 화면 정의서', () => {
     return renderToStaticMarkup(createElement(StageNav, { detail: d, selected: 'export', onSelect: () => {} }));
   };
 
-  it('저장소 프로젝트는 데스크톱·모바일 모두 화면 정의서 그룹을 숨긴다', () => {
+  it('저장소 프로젝트도 화면 정의서 그룹을 보여 준다 (화면 링크가 있으면 프로토타입을 만든다)', () => {
     const html = render('octo/app');
-    expect(html).not.toContain('화면 정의서');
-    expect(html).not.toContain('screens/a.md');
+    expect(html).toContain('화면 정의서');
+    expect(html).toContain('screens/a.md');
   });
 
   it('저장소가 없는 프로젝트는 화면 정의서 그룹을 그대로 보여 준다', () => {
     const html = render(null);
     expect(html).toContain('화면 정의서');
     expect(html).toContain('screens/a.md');
+  });
+});
+
+describe('디자인 단계', () => {
+  const screen = (over: Partial<DocumentView> = {}) => doc('screens/home.html', { kind: 'screen', name: 'home', ...over });
+  const withDesign = (docs: DocumentView[], designMd: string | null = null, repo: string | null = null) => {
+    const d = detail(iv({ status: 'approved' }), docs);
+    d.project.designMd = designMd;
+    d.project.repo = repo;
+    return d;
+  };
+  const nav = (d: ProjectDetail) => renderToStaticMarkup(createElement(StageNav, { detail: d, selected: 'export', onSelect: () => {} }));
+
+  it('승인된 화면이 없으면 첫 화면 대신 디자인 단계를 연다 (붙여 넣은 문서가 있어도)', () => {
+    const docs = [doc('0-PRODUCT.md', { status: 'approved' }), screen()];
+    expect(defaultStageKey(withDesign(docs))).toBe('design');
+    expect(defaultStageKey(withDesign(docs, '# 이미 붙여 넣은 문서'))).toBe('design');
+  });
+
+  it('기준 화면을 만드는 동안(초안)에는 디자인 단계에 머문다', () => {
+    const docs = [doc('0-PRODUCT.md', { status: 'approved' }), screen({ status: 'draft', content: '<html></html>' })];
+    expect(defaultStageKey(withDesign(docs, '# 문서'))).toBe('design');
+  });
+
+  it('기준 화면을 승인하면 다른 단계처럼 아직 승인 안 된 다음 화면으로 넘어간다', () => {
+    const docs = [
+      doc('0-PRODUCT.md', { status: 'approved' }),
+      screen({ status: 'approved', content: '<html></html>' }),
+      doc('screens/next.html', { kind: 'screen', name: 'next' }),
+    ];
+    expect(defaultStageKey(withDesign(docs, '# 문서'))).toBe('screens/next.html');
+  });
+
+  it('앞 문서가 남아 있으면 그 문서가 먼저다', () => {
+    const docs = [doc('0-PRODUCT.md'), screen()];
+    expect(defaultStageKey(withDesign(docs))).toBe('0-PRODUCT.md');
+  });
+
+  it('화면 목록이 있으면 단계 목록에 디자인 문서가 있음·없음과 함께 나온다', () => {
+    const docs = [doc('0-PRODUCT.md', { status: 'approved' }), screen()];
+    expect(nav(withDesign(docs))).toMatch(/디자인 문서<\/span>.*없음/);
+    expect(nav(withDesign(docs, '# 문서'))).toMatch(/디자인 문서<\/span>.*있음/);
+  });
+
+  it('화면 목록이 없으면 숨기지만, 저장소 프로젝트는 화면이 없어도 보인다', () => {
+    expect(nav(withDesign([doc('0-PRODUCT.md', { status: 'approved' })]))).not.toContain('디자인 문서');
+    expect(nav(withDesign([doc('0-PRODUCT.md', { status: 'approved' })], null, 'octo/app'))).toContain('디자인 문서');
   });
 });

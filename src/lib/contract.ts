@@ -5,7 +5,7 @@ export type InterviewStatus = 'active' | 'summarized' | 'approved' | 'skipped';
 export type DocStatus = 'empty' | 'draft' | 'approved';
 export type MessageRole = 'agent' | 'user';
 export type DocKind = 'base' | 'requirement' | 'screen' | 'change';
-export type RunKind = 'interview' | 'document' | 'annotations' | 'pr' | 'batch';
+export type RunKind = 'interview' | 'document' | 'annotations' | 'pr' | 'batch' | 'design' | 'requirements';
 export const LOGIN_TARGETS = ['claude', 'codex', 'github'] as const;
 export type LoginTarget = (typeof LOGIN_TARGETS)[number];
 
@@ -81,13 +81,17 @@ export type BatchEvent =
   | { event: 'done'; data: { batch: BatchView } }
   | { event: 'delta'; data: { path: string; text: string } }
   | { event: 'error'; data: { code: AgentErrorCode | 'invalid_links'; message: string; path?: string } };
+// 여러 문서를 한 번에 만드는 실행의 진행 (요구사항 한 번에 만들기)
+// 요구사항 문서는 서로 입력이 겹치지 않아 한 프로젝트에서 동시에 이만큼까지 만든다.
+export const MAX_PARALLEL = 3;
+export interface RunProgress { total: number; done: string[]; active: string[]; failed: string[] }
 export interface ProjectDetail {
   project: Project;
   batch: BatchView | null;
   repoContext: RepoContext | null;
   interview: Interview | null;
   documents: DocumentView[];   // stage 오름차순, 같은 stage는 path 오름차순
-  running: { kind: RunKind; path: string | null } | null;
+  running: { kind: RunKind; path: string | null; progress?: RunProgress; shared?: boolean } | null;
   exportGate: { ok: boolean; blocking: string[]; upstreamChanged: string[] };
 }
 export interface AgentStatus { installed: boolean; loggedIn: boolean; subscription: boolean; loginCommand: string; loginRunning?: boolean }

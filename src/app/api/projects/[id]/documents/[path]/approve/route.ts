@@ -1,5 +1,5 @@
 import { batchBusy } from '@/server/runtime';
-import { getProject, tx, insertEmptyDocuments, updateDocument } from '@/server/db';
+import { tx, insertEmptyDocuments, updateDocument } from '@/server/db';
 import { resolveDocRef, viewOf } from '@/server/documents';
 import { apiError, gateError, json } from '@/server/http';
 import type { ApproveResponse } from '@/lib/contract';
@@ -21,8 +21,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string; p
     updateDocument(ref.projectId, ref.path, { status: 'approved', upstreamChanged: false });
     if (path === '0-PRODUCT.md') {
       insertEmptyDocuments(ref.projectId, names.map((n) => `requirements/${n}.md`));
-    } else if (path === '4-USERFLOW.md' && !getProject(ref.projectId)?.repo) {
-      // 저장소 프로젝트는 화면 정의서를 만들지 않는다.
+    } else if (path === '4-USERFLOW.md') {
       insertEmptyDocuments(ref.projectId, names.map((n) => `screens/${n}.html`));
     }
   });

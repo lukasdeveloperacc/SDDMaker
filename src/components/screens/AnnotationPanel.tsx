@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentName, Annotation, Box, PromptPreviewResponse } from '@/lib/contract';
+import type { Annotation, Box, PromptPreviewResponse } from '@/lib/contract';
 import { docApiPath } from '@/lib/contract';
 import { api, ApiRequestError } from '@/lib/api';
 import { applyBlocks, type MergeResult } from '@/lib/screens/html';
 import { truncateLabel } from '@/lib/screens/geometry';
 import { toPayload, useAnnotations, type StoredAnnotation } from '@/lib/screens/annotations-store';
 import { useAgentRun } from '@/lib/use-agent-run';
-import { AgentPicker } from '@/components/AgentPicker';
+import { useAgentChoice } from '@/components/AgentChoice';
 import { RunStatus } from '@/components/RunStatus';
 import { Button, Modal, Notice, TextArea } from '@/components/ui';
 
@@ -60,7 +60,7 @@ export function AnnotationPanel({
 }: AnnotationPanelProps) {
   const [annotations, setAnnotations] = useAnnotations(projectId, path);
   const run = useAgentRun();
-  const [agent, setAgent] = useState<AgentName>('claude');
+  const agent = useAgentChoice();
   const [kind, setKind] = useState<Annotation['kind']>('change');
   const [note, setNote] = useState('');
   const [up, setUp] = useState(0); // 상위 컴포넌트로 몇 번 올라갔는지
@@ -247,7 +247,6 @@ export function AnnotationPanel({
       </div>
 
       <div className="stack">
-        <AgentPicker value={agent} onChange={setAgent} disabled={locked} />
         <Button variant="primary" disabled={locked || annotations.length === 0} onClick={() => void send()}>
           보내기
         </Button>

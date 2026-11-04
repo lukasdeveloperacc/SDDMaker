@@ -2,6 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AgentChoice } from '@/components/AgentChoice';
 import { BatchPanel } from '@/components/documents/BatchPanel';
 import type { DocumentView, ProjectDetail } from '@/lib/contract';
 
@@ -33,11 +34,20 @@ describe('BatchPanel', () => {
     expect(host.textContent).toContain('완료 1개 · 남음 1개');
   });
 
-  it('disables batch start and agent choice while another run owns the project', async () => {
+  it('disables batch start while another run owns the project', async () => {
     await render(detail({ running: { kind: 'document', path: '0-PRODUCT.md' } }));
     expect(button('남은 초안 이어 만들기')?.disabled).toBe(true);
-    expect(host.querySelector('select')?.disabled).toBe(true);
     expect(button('실행 취소')).toBeUndefined();
+  });
+
+  it('has no agent picker of its own: it runs with the agent chosen in the project header', async () => {
+    const sse = () => new Response('event: done\ndata: {"batch":{"state":"completed","currentPath":null,"completedPaths":["0-PRODUCT.md"],"remainingPaths":[],"error":null,"reviewToken":"r"}}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    fetchMock.mockResolvedValueOnce(sse());
+    await act(async () => root.render(createElement(AgentChoice.Provider, { value: 'codex' }, createElement(BatchPanel, { projectId: 9, detail: detail(), refresh }))));
+    expect(host.querySelector('select, input, .agent-picker')).toBeNull();
+    await click(button('남은 초안 이어 만들기')!);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/9/batch', expect.objectContaining({ body: JSON.stringify({ agent: 'codex' }) }));
   });
 
   it('keeps batch approval disabled for partial results and flagged drafts', async () => {
@@ -69,6 +79,8 @@ describe('BatchPanel', () => {
     await click(button('남은 초안 이어 만들기')!);
     await flush();
     expect(fetchMock).toHaveBeenCalledWith('/api/projects/9/batch', expect.objectContaining({ method: 'POST', body: JSON.stringify({ agent: 'claude' }) }));
+    // 에이전트 선택기에서 고른 모델·강도를 담은 헤더가 함께 간다
+    expect((fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers).toHaveProperty('x-agent-options');
     expect(refresh).toHaveBeenCalled();
   });
 

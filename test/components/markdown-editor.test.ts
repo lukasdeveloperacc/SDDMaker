@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, useState, act } from 'react';
+import { createElement, useState, act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MarkdownEditor } from '@/components/documents/MarkdownEditor';
@@ -7,9 +7,9 @@ import { MarkdownEditor } from '@/components/documents/MarkdownEditor';
 const LABEL = '0-PRODUCT.md 본문';
 
 // 부모가 본문을 쥔 것처럼 입력을 상태로 돌려준다 (탭을 바꿔도 값이 남는지 본다).
-function Harness({ initial, readOnly }: { initial: string; readOnly: boolean }) {
+function Harness({ initial, readOnly, extra, onLink }: { initial: string; readOnly: boolean; extra?: { label: string; content: ReactNode }; onLink?: (href: string) => boolean }) {
   const [value, setValue] = useState(initial);
-  return createElement(MarkdownEditor, { label: LABEL, value, readOnly, onChange: setValue });
+  return createElement(MarkdownEditor, { label: LABEL, value, readOnly, onChange: setValue, extra, onLink });
 }
 
 let root: Root;
@@ -27,8 +27,8 @@ afterEach(async () => {
   container.remove();
 });
 
-async function render(initial: string, readOnly = false) {
-  await act(async () => root.render(createElement(Harness, { initial, readOnly })));
+async function render(initial: string, readOnly = false, more: { extra?: { label: string; content: ReactNode }; onLink?: (href: string) => boolean } = {}) {
+  await act(async () => root.render(createElement(Harness, { initial, readOnly, ...more })));
 }
 function tab(text: string) {
   const el = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((b) => b.textContent === text);
@@ -46,6 +46,15 @@ function textarea() {
 }
 async function click(el: HTMLElement) {
   await act(async () => el.click());
+}
+// 링크 클릭이 브라우저 이동으로 이어졌을지(막히지 않았는지)를 돌려준다. jsdom이 실제로 이동하지 않게 마지막에 막는다.
+async function clickLink(a: Element): Promise<boolean> {
+  let prevented = false;
+  const spy = (event: Event) => { prevented = event.defaultPrevented; event.preventDefault(); };
+  document.addEventListener('click', spy);
+  await act(async () => (a as HTMLElement).click());
+  document.removeEventListener('click', spy);
+  return prevented;
 }
 async function press(el: HTMLElement, key: string) {
   await act(async () => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })));
@@ -136,5 +145,65 @@ describe('마크다운 편집기 탭', () => {
     await render('# 제목');
     expect(container.querySelector('.eyebrow')).toBeNull();
     expect(container.textContent).not.toContain('미리보기');
+  });
+});
+
+describe('보조 탭과 링크', () => {
+  const extra = { label: '저장소 원본', content: createElement('p', { id: 'original' }, '원본 내용') };
+  const tabNames = () => [...container.querySelectorAll('[role="tab"]')].map((b) => b.textContent);
+
+  it('보조 탭은 마지막에 붙고 열면 그 내용만 보인다', async () => {
+    await render('# 제목', true, { extra });
+    expect(tabNames()).toEqual(['마크다운', '미리 보기', '저장소 원본']);
+    expect(selectedTab()).toBe('미리 보기');
+    expect(container.querySelector('#original')).toBeNull();
+    await click(tab('저장소 원본'));
+    expect(container.querySelector('#original')?.textContent).toBe('원본 내용');
+    expect(textarea()).toBeNull();
+    expect(container.querySelector('.editor-preview')).toBeNull();
+    expect(panels()).toHaveLength(1);
+    expect(panels()[0].getAttribute('aria-labelledby')).toBe(tab('저장소 원본').id);
+  });
+
+  it('보조 탭이 없으면 탭은 둘이다', async () => {
+    await render('# 제목');
+    expect(tabNames()).toEqual(['마크다운', '미리 보기']);
+  });
+
+  it('화살표 키는 세 탭을 돌고 End는 보조 탭, Home은 마크다운으로 간다', async () => {
+    await render('# 제목', true, { extra });
+    await press(tab('미리 보기'), 'ArrowRight');
+    expect(selectedTab()).toBe('저장소 원본');
+    expect(document.activeElement).toBe(tab('저장소 원본'));
+    await press(tab('저장소 원본'), 'ArrowRight');
+    expect(selectedTab()).toBe('마크다운');
+    await press(tab('마크다운'), 'ArrowLeft');
+    expect(selectedTab()).toBe('저장소 원본');
+    await press(tab('저장소 원본'), 'Home');
+    expect(selectedTab()).toBe('마크다운');
+    await press(tab('마크다운'), 'End');
+    expect(selectedTab()).toBe('저장소 원본');
+  });
+
+  it('보조 탭이 사라지면 미리 보기로 돌아온다', async () => {
+    await render('# 제목', true, { extra });
+    await click(tab('저장소 원본'));
+    await render('# 제목', true);
+    expect(selectedTab()).toBe('미리 보기');
+    expect(container.querySelector('.editor-preview h1')?.textContent).toBe('제목');
+  });
+
+  it('미리 보기의 링크는 onLink가 처리하면 브라우저 이동을 막고 아니면 그대로 둔다', async () => {
+    const seen: string[] = [];
+    await render('[문서](requirements/a.md) [밖](https://example.com)', true, { onLink: (href) => { seen.push(href); return href.startsWith('requirements/'); } });
+    const links = container.querySelectorAll('.editor-preview a');
+    expect(await clickLink(links[0])).toBe(true);
+    expect(await clickLink(links[1])).toBe(false);
+    expect(seen).toEqual(['requirements/a.md', 'https://example.com']);
+  });
+
+  it('onLink가 없으면 링크를 건드리지 않는다', async () => {
+    await render('[문서](requirements/a.md)', true);
+    expect(await clickLink(container.querySelector('.editor-preview a')!)).toBe(false);
   });
 });

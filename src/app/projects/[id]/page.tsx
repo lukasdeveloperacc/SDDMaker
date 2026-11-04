@@ -4,15 +4,20 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { InterviewPanel } from '@/components/InterviewPanel';
-import { StageNav, EXPORT_KEY, INTERVIEW_KEY, defaultStageKey } from '@/components/StageNav';
+import { AgentChoice } from '@/components/AgentChoice';
+import { RunSettings } from '@/components/RunSettings';
+import { InterviewPanel, interviewPhase } from '@/components/InterviewPanel';
+import { StageNav, DESIGN_KEY, EXPORT_KEY, INTERVIEW_KEY, defaultStageKey } from '@/components/StageNav';
+import { ProjectHeader } from '@/components/projects/ProjectHeader';
 import { DocumentPanel } from '@/components/documents/DocumentPanel';
 import { BatchPanel } from '@/components/documents/BatchPanel';
 import { ExportPanel } from '@/components/documents/ExportPanel';
+import { DesignPanel } from '@/components/screens/DesignPanel';
 import { ScreenPanel } from '@/components/screens/ScreenPanel';
 import { Button, Notice } from '@/components/ui';
 import { api, ApiRequestError } from '@/lib/api';
-import type { ProjectDetail } from '@/lib/contract';
+import { readAgent, writeAgent } from '@/lib/agent-options';
+import type { AgentName, ProjectDetail } from '@/lib/contract';
 
 function errorText(e: unknown): string {
   return e instanceof ApiRequestError ? e.message : '요청을 처리하지 못했습니다.';
@@ -27,6 +32,7 @@ export default function Page() {
   const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [trail, setTrail] = useState<string[]>([]);
+  const [agent, setAgent] = useState<AgentName>('claude');
 
   const refresh = useCallback(async () => {
     if (!validId) return;
@@ -44,6 +50,24 @@ export default function Page() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // 서버가 실행 상태·문서가 바뀌었다고 알리면 바로 다시 읽는다 (화면을 떠나도 이어지는 생성의 진행·완료가 실시간으로 보인다).
+  // 이벤트가 몰리면 한 번으로 묶고, 연결이 끊겼다 다시 붙으면 한 번 읽는다.
+  useEffect(() => {
+    if (!validId || typeof EventSource === 'undefined') return;
+    const source = new EventSource(`/api/projects/${id}/events`);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const soon = () => {
+      if (timer !== null) return;
+      timer = setTimeout(() => { timer = null; void refresh(); }, 80);
+    };
+    source.addEventListener('change', soon);
+    source.addEventListener('ready', soon);
+    return () => { source.close(); if (timer !== null) clearTimeout(timer); };
+  }, [id, validId, refresh]);
+
+  // 고른 에이전트는 브라우저에 남겨 다시 열어도 이어 쓴다 (서버 렌더와 맞추려고 마운트 뒤에 읽는다).
+  useEffect(() => setAgent(readAgent()), []);
 
   if (!validId || loadError?.notFound) {
     return (
@@ -88,12 +112,32 @@ export default function Page() {
     setSelected(prev);
   };
 
+  // 진행 중인 인터뷰는 시작한 에이전트로만 이어진다. 그 화면에서는 실행 설정도 그 에이전트로 고정한다.
+  const lockedTo = current === INTERVIEW_KEY && interviewPhase(detail.interview) === 'chat' ? detail.interview?.agent ?? null : null;
+  const effectiveAgent = lockedTo ?? agent;
+  const chooseAgent = (next: AgentName) => {
+    setAgent(next);
+    writeAgent(next);
+  };
+
   const panelProps = { projectId: id, detail, refresh, onNavigate: navigate };
   let panel: ReactNode;
   if (current === INTERVIEW_KEY) {
     panel = <InterviewPanel projectId={id} detail={detail} refresh={refresh} />;
   } else if (current === EXPORT_KEY) {
     panel = <ExportPanel projectId={id} detail={detail} />;
+  } else if (current === DESIGN_KEY) {
+    // 기준 화면은 화면 패널을 그대로 쓴다. 화면 링크를 누르면 그 화면 단계로 가고, 뒤로 가면 이 단계로 돌아온다.
+    panel = (
+      <DesignPanel
+        projectId={id}
+        detail={detail}
+        refresh={refresh}
+        renderScreen={(path) => (
+          <ScreenPanel key={path} {...panelProps} path={path} trail={[]} onLinkNavigate={openScreen} onBack={back} />
+        )}
+      />
+    );
   } else if (!detail.documents.some((d) => d.path === current)) {
     panel = <Notice tone="warn">이 단계는 목록에 없습니다. 왼쪽에서 다른 단계를 고르세요.</Notice>;
   } else if (current.startsWith('screens/')) {
@@ -113,38 +157,25 @@ export default function Page() {
 
   return (
     <section className="stack" style={{ gap: 'var(--space-lg)' }}>
-      <header className="project-heading">
-        <Link href="/" className="caption">
-          ← 프로젝트 목록
-        </Link>
-        <h1 className="h2">{detail.project.name}</h1>
-        {detail.project.repo && (
-          <a
-            className="caption"
-            href={`https://github.com/${detail.project.repo}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`${detail.project.repo} GitHub 저장소 (새 탭에서 열림)`}
-            style={{ overflowWrap: 'anywhere', justifySelf: 'start' }}
-          >
-            {detail.project.repo}
-          </a>
-        )}
-        <p className="caption" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
-          {detail.project.idea}
-        </p>
-      </header>
+      <ProjectHeader project={detail.project} />
 
       {loadError && <Notice tone="warn" title="오류">{loadError.message} 화면 내용은 마지막으로 읽은 값입니다.</Notice>}
 
-      <BatchPanel projectId={id} detail={detail} refresh={refresh} />
-
-      <div className="project-workspace">
-        <aside className="project-sidebar">
-          <StageNav detail={detail} selected={current} onSelect={navigate} />
-        </aside>
-        <div className="project-panel">{panel}</div>
-      </div>
+      <AgentChoice.Provider value={effectiveAgent}>
+        <div className="project-workspace">
+          <aside className="project-sidebar">
+            <BatchPanel projectId={id} detail={detail} refresh={refresh} />
+            <StageNav detail={detail} selected={current} onSelect={navigate} />
+          </aside>
+          <div className="project-panel">
+            <details className="run-override">
+              <summary>실행 설정 · {effectiveAgent === 'claude' ? 'Claude Code' : 'Codex'}</summary>
+              <RunSettings agent={effectiveAgent} onAgentChange={chooseAgent} lockedTo={lockedTo} disabled={detail.running !== null} />
+            </details>
+            {panel}
+          </div>
+        </div>
+      </AgentChoice.Provider>
     </section>
   );
 }

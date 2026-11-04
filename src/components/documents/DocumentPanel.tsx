@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import type { AgentName, ProjectDetail } from '@/lib/contract';
+import type { ProjectDetail, RepoContext } from '@/lib/contract';
 import { docApiPath } from '@/lib/contract';
 import { api, ApiRequestError } from '@/lib/api';
 import { useAgentRun } from '@/lib/use-agent-run';
-import { AgentPicker } from '@/components/AgentPicker';
+import { useAgentChoice } from '@/components/AgentChoice';
 import { DocActions } from '@/components/DocActions';
 import { RunStatus } from '@/components/RunStatus';
-import { Markdown } from '@/components/Markdown';
 import { Button, Notice, TextArea } from '@/components/ui';
 import { MarkdownEditor } from '@/components/documents/MarkdownEditor';
 
@@ -30,7 +29,6 @@ interface ErrorInfo {
 // 저장 본문이 base와 달라지면(되돌리기·승인 등) 편집 값을 버리고 저장 본문을 보여 준다.
 interface Local {
   path: string;
-  agent: AgentName;
   feedback: string;
   writing: boolean;
   edit: { base: string; text: string } | null;
@@ -39,7 +37,7 @@ interface Local {
 
 function localFor(state: Local, path: string): Local {
   if (state.path === path) return state;
-  return { path, agent: 'claude', feedback: '', writing: false, edit: null, error: null };
+  return { path, feedback: '', writing: false, edit: null, error: null };
 }
 
 function toErrorInfo(e: unknown): ErrorInfo {
@@ -47,9 +45,46 @@ function toErrorInfo(e: unknown): ErrorInfo {
   return { message: '요청을 처리하지 못했습니다.' };
 }
 
+// 문서 안의 상대 링크(requirements/a.md, ../0-PRODUCT.md#x)를 프로젝트 문서 경로로 푼다.
+// 외부 주소·루트 경로·앵커는 null이며 브라우저에 맡긴다.
+export function docLinkPath(from: string, href: string): string | null {
+  if (/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(href)) return null;
+  const parts = from.split('/').slice(0, -1);
+  for (const seg of href.split(/[?#]/)[0].split('/')) {
+    if (seg === '..') parts.pop();
+    else if (seg !== '.' && seg !== '') parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+const OMISSION: Record<string, string> = {
+  not_found: '기준 저장소에 같은 경로의 파일이 없습니다.',
+  instruction_file: '지침 파일은 보안상 비교 내용에서 제외했습니다.',
+  symlink: '기준 경로가 심볼릭 링크여서 읽지 않았습니다.',
+  non_text: '텍스트 파일이 아니어서 읽지 않았습니다.',
+  file_limit: '파일 수 또는 개별 파일 크기 제한으로 읽지 않았습니다.',
+  total_limit: '전체 크기 제한으로 읽지 않았습니다.',
+  redacted: '민감 정보가 감지되어 원본 내용을 표시하지 않습니다.',
+};
+
+function OriginalView({ baseline, item }: { baseline: string; item: RepoContext['originals'][number] }) {
+  return (
+    <div className="stack">
+      <p className="caption">기준 커밋 {baseline}</p>
+      {item.originalText === null ? (
+        <p className="caption">{OMISSION[item.omissionReason ?? 'not_found']}</p>
+      ) : (
+        <pre className="run-stream editor-original">{item.originalText}</pre>
+      )}
+    </div>
+  );
+}
+
 export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: PanelProps) {
-  const [state, setState] = useState<Local>({ path: '', agent: 'claude', feedback: '', writing: false, edit: null, error: null });
+  const [state, setState] = useState<Local>({ path: '', feedback: '', writing: false, edit: null, error: null });
+  const agent = useAgentChoice();
   const [saving, setSaving] = useState(false);
+  const [missingLink, setMissingLink] = useState<string | null>(null);
   const run = useAgentRun();
 
   const doc = detail.documents.find((d) => d.path === path);
@@ -62,7 +97,7 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
     setState((prev) => ({ ...localFor(prev, path), ...patch, path }));
 
   const value = L.edit && L.edit.base === doc.content ? L.edit.text : doc.content;
-  const locked = saving || run.running || doc.running || detail.running?.kind === 'batch';
+  const locked = saving || run.running || doc.running || detail.running?.kind === 'batch' || (detail.running?.kind === 'requirements' && !detail.running.shared);
   const canSave = !locked && doc.status !== 'approved' && value.trim() !== '' && value !== doc.content;
 
   // 저장 본문을 PUT으로 보내고 상세를 다시 읽는다.
@@ -91,7 +126,7 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
     if (feedback !== undefined && value !== doc.content) {
       if (!(await persist(value))) return;
     }
-    const body = feedback === undefined ? { agent: L.agent } : { agent: L.agent, feedback };
+    const body = feedback === undefined ? { agent } : { agent, feedback };
     const res = await run.start(docApiPath(projectId, path, 'generate'), body);
     if (res.ok) {
       update({ edit: null, writing: false, feedback: '' });
@@ -99,14 +134,48 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
     }
   };
 
+  // 비어 있는 요구사항 문서를 한 번에 만든다 (요구사항끼리는 입력이 겹치지 않는다). 끝나는 대로 초안이 생기므로 진행 중에도 목록을 다시 읽는다.
+  const emptyRequirements = detail.documents.filter((d) => d.kind === 'requirement' && d.status === 'empty' && !d.missingFromList).length;
+  const generateAll = async () => {
+    update({ error: null });
+    try {
+      const res = await run.start(`/api/projects/${projectId}/requirements/generate`, { agent });
+      if (res.ok) {
+        const { failed } = JSON.parse(res.text) as { failed: { path: string; message: string }[] };
+        if (failed.length > 0) update({ error: { message: '일부 문서를 만들지 못했습니다. 비어 있는 문서에서 다시 생성하세요.', items: failed.map((f) => `${f.path}: ${f.message}`) } });
+      }
+    } finally {
+      await refresh();
+    }
+  };
+
+  // 본문 안의 문서 링크는 404 대신 같은 프로젝트의 그 문서로 이동한다.
+  const openLink = (href: string): boolean => {
+    const target = docLinkPath(doc.path, href);
+    if (target === null) return false;
+    if (detail.documents.some((d) => d.path === target)) onNavigate(target);
+    else setMissingLink(target);
+    return true;
+  };
+
+  // 저장소 원본은 본문과 같은 탭 줄의 마지막 탭이다.
+  const repo = detail.repoContext;
+  const original = repo?.originals.find((item) => item.path === `docs/${doc.path}`);
+  const originalView = repo && original ? <OriginalView baseline={repo.baselineCommit} item={original} /> : null;
+  const extra = originalView ? { label: '저장소 원본', content: originalView } : undefined;
+
+  // 서버는 연결이 끊겨도 생성을 이어 가므로 취소는 서버에도 알린다.
+  const cancellable = { ...run, cancel: () => { run.cancel(); void api('DELETE', `/api/projects/${projectId}/run`).catch(() => {}); } };
   const next = detail.documents[detail.documents.findIndex((d) => d.path === path) + 1];
-  const agentPicker = (
-    <AgentPicker value={L.agent} onChange={(a) => update({ agent: a })} disabled={locked} />
-  );
   const runArea = (
     <>
-      {doc.running && !run.running && <p className="caption">이 문서를 다른 실행이 생성하고 있습니다.</p>}
-      <RunStatus run={run} agent={L.agent} />
+      {doc.running && !run.running && (
+        <div className="row">
+          <p className="caption">이 문서를 생성하고 있습니다.</p>
+          <Button variant="utility" onClick={() => void api('DELETE', `/api/projects/${projectId}/run`).catch(() => {})}>취소</Button>
+        </div>
+      )}
+      <RunStatus run={cancellable} agent={agent} />
     </>
   );
 
@@ -114,9 +183,7 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
   if (doc.status === 'approved') {
     body = (
       <div className="stack">
-        <div className="card">
-          <Markdown source={doc.content} />
-        </div>
+        <MarkdownEditor label={`${doc.path} 본문`} value={doc.content} readOnly onLink={openLink} extra={extra} />
         <div>
           <Button variant="primary" disabled={locked} onClick={() => onNavigate(next ? next.path : 'export')}>
             다음 단계로
@@ -127,7 +194,6 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
   } else if (doc.status === 'empty' && !L.writing) {
     body = (
       <div className="stack">
-        {agentPicker}
         {!doc.generate.ok && <p className="caption">{doc.generate.reason}</p>}
         <div className="row">
           <Button variant="primary" disabled={locked || !doc.generate.ok} onClick={() => void generate()}>
@@ -136,8 +202,19 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
           <Button variant="utility" disabled={locked} onClick={() => update({ writing: true })}>
             직접 쓰기
           </Button>
+          {doc.kind === 'requirement' && emptyRequirements > 1 && (
+            <Button variant="secondary" disabled={locked || detail.running !== null || !doc.generate.ok} onClick={() => void generateAll()}>
+              남은 요구사항 {emptyRequirements}개 한 번에 만들기
+            </Button>
+          )}
         </div>
         {runArea}
+        {originalView && (
+          <section className="stack" aria-label="저장소 원본">
+            <h3 className="h4">저장소 원본</h3>
+            {originalView}
+          </section>
+        )}
       </div>
     );
   } else {
@@ -149,6 +226,8 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
           value={value}
           onChange={(v) => update({ edit: { base: doc.content, text: v } })}
           readOnly={locked}
+          onLink={openLink}
+          extra={extra}
         />
         <div className="row">
           <Button variant="secondary" disabled={!canSave} onClick={() => void save()}>
@@ -157,7 +236,6 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
         </div>
         {doc.status === 'draft' && (
           <div className="stack">
-            {agentPicker}
             <TextArea
               label="피드백"
               value={L.feedback}
@@ -192,17 +270,7 @@ export function DocumentPanel({ projectId, detail, path, refresh, onNavigate }: 
         refresh={refresh}
       />
       {doc.upstreamChanged && <Notice tone="warn" title="앞 문서 변경을 확인하세요">이 문서를 직접 살펴본 뒤 확인을 누르면 내용과 초안/승인 상태를 유지하며 표시만 지웁니다.</Notice>}
-      {detail.repoContext && (() => {
-        const original = detail.repoContext.originals.find((item) => item.path === `docs/${doc.path}`);
-        if (!original) return null;
-        const omission: Record<string, string> = { not_found: '기준 저장소에 같은 경로의 파일이 없습니다.', instruction_file: '지침 파일은 보안상 비교 내용에서 제외했습니다.', symlink: '기준 경로가 심볼릭 링크여서 읽지 않았습니다.', non_text: '텍스트 파일이 아니어서 읽지 않았습니다.', file_limit: '파일 수 또는 개별 파일 크기 제한으로 읽지 않았습니다.', total_limit: '전체 크기 제한으로 읽지 않았습니다.', redacted: '민감 정보가 감지되어 원본 내용을 표시하지 않습니다.' };
-        return <section className="stack" aria-label="저장소 원본과 비교">
-          <h3 className="h4">저장소 원본과 비교</h3>
-          <p className="caption">기준 커밋 {detail.repoContext.baselineCommit}</p>
-          <div><h4 className="caption">기준 저장소</h4>{original.originalText === null ? <p className="caption">{omission[original.omissionReason ?? 'not_found']}</p> : <pre className="run-stream" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{original.originalText}</pre>}</div>
-          <div><h4 className="caption">현재 {doc.status === 'approved' ? '승인 문서' : '초안'}</h4><pre className="run-stream" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{doc.content}</pre></div>
-        </section>;
-      })()}
+      {missingLink && <Notice tone="warn">이 프로젝트에 없는 문서입니다: {missingLink}</Notice>}
       {L.error && (
         <Notice tone="error" title="저장하지 못했습니다">
           <p className="notice-body">{L.error.message}</p>

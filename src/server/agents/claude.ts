@@ -2,14 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { AgentError, RUN_TIMEOUT_MS, RunTimeoutError, runLogin, runLogout, shellQuote, spawnCli } from './exec';
 import { claudeHome } from '../env';
 import { recordClaudeRateLimit } from './usage';
+import { currentAgentOptions } from './options';
 import type { AgentAdapter, RunInput, RunResult } from './types';
 
 // 저장소 모드: 읽기 도구만, 코드 실행 도구 제거, 권한 프롬프트 없이 읽기 허용 (B0 확인 전 기본값).
 function runArgs(repoDir: string | undefined): string[] {
+  const { model, effort } = currentAgentOptions();
   const tools = repoDir
     ? ['--tools', 'Read,Grep,Glob', '--restricted', '--allowedTools', 'Read,Grep,Glob']
     : ['--tools', ''];
   return [
+    ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []),
     '-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     ...tools, '--setting-sources', '', '--strict-mcp-config',
   ];

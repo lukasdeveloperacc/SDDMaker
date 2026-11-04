@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readSse } from '@/lib/sse-client';
+import { agentHeaders } from '@/lib/agent-options';
+import { beginRun } from '@/lib/run-activity';
 
 export const USAGE_REFRESH_EVENT = 'sddmaker:usage-refresh';
 
@@ -37,6 +39,7 @@ export function useAgentRun(): AgentRun {
     async (url, body) => {
       const controller = new AbortController();
       abortRef.current = controller;
+      const endRun = beginRun();
       setRunning(true);
       setText('');
       setError(null);
@@ -48,7 +51,7 @@ export function useAgentRun(): AgentRun {
       try {
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: agentHeaders(),
           body: JSON.stringify(body),
           cache: 'no-store',
           signal: controller.signal,
@@ -85,6 +88,7 @@ export function useAgentRun(): AgentRun {
         stopTimer();
         abortRef.current = null;
         setRunning(false);
+        endRun();
         window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
       }
 

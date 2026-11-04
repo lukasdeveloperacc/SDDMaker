@@ -42,7 +42,7 @@ function ideaText(idea: string, repo: string | null | undefined): string {
 function docInstruction(i: { path: string; screenNames: string[]; repo?: { name: string; baseline?: string } }): string[] {
   if (i.path === '0-PRODUCT.md') return [PRODUCT_RULE];
   if (i.path === '4-USERFLOW.md') {
-    return i.repo ? ['- `4-USERFLOW.md`: 화면 정의서 링크를 넣지 않는다.'] : [FLOW_RULE];
+    return [FLOW_RULE];
   }
   if (i.path === BASELINE_DOC) {
     return [
@@ -73,10 +73,12 @@ export function buildDocumentPrompt(i: {
   path: string; idea: string; summary: string | null; designMd: string | null;
   inputDocs: { path: string; content: string; status?: string }[]; screenNames: string[]; screenFiles: string[];
   current?: string; feedback?: string;
+  anchor?: { path: string; content: string }; // 이미 승인된 다른 화면 (화면 생성에서만)
   repoContext?: RepoContext;
   repo?: { name: string; baseline?: string }; // 저장소 프로젝트일 때만 (owner/repo, 기준 커밋)
 }): string {
   const isChange = i.path === CHANGE_DOC || i.path === BASELINE_DOC;
+  const isScreen = i.path.startsWith('screens/'); // 저장소 프로젝트의 화면도 구현됨·근거 규칙 없이 새 화면처럼 만든다 (코드는 참고만)
   const out: string[] = [
     `대상 문서: ${i.path}`,
     '',
@@ -85,8 +87,8 @@ export function buildDocumentPrompt(i: {
     '',
     '## 출력 규칙',
     '- 문서 본문만 출력한다 (서두·맺음말 없음).',
-    i.repo ? REPO_IMPLEMENTED : '- 구현 전 상태이므로 `예정`을 표시한다.',
-    ...(i.repo ? [...REPO_GUARD, '- 구현됨 주장마다 실제 상대 소스 경로와 심볼을 근거로 쓴다. 줄 번호는 아는 경우에만 쓴다. 별도 `확인 필요` 절에 미확인 제품 의도·정책과 기존 문서 충돌을 기록한다.'] : []),
+    i.repo && !isScreen ? REPO_IMPLEMENTED : '- 구현 전 상태이므로 `예정`을 표시한다.',
+    ...(i.repo ? [...REPO_GUARD, ...(isScreen ? [] : ['- 구현됨 주장마다 실제 상대 소스 경로와 심볼을 근거로 쓴다. 줄 번호는 아는 경우에만 쓴다. 별도 `확인 필요` 절에 미확인 제품 의도·정책과 기존 문서 충돌을 기록한다.'])] : []),
     ...(i.designMd === null || i.designMd.trim() === ''
       ? ['- 디자인 문서가 없으면 2-DESIGN.md를 링크하지 않는다.']
       : []),
@@ -102,11 +104,74 @@ export function buildDocumentPrompt(i: {
   if (i.path === BASELINE_DOC) out.push('', '현재 구현·근거·확인 필요를 기록하며 미래 로드맵을 지어내지 않는다.');
   if (i.summary) out.push('', '## 인터뷰 요약', i.summary);
   if (i.designMd && i.designMd.trim() !== '') out.push('', '## 디자인 문서', i.designMd);
+  if (i.anchor) {
+    out.push(
+      '', `## 기준 화면 (${i.anchor.path}, 승인됨)`,
+      '대상 화면은 이 화면의 배치 밀도·컴포넌트 모양·상태 표현을 따른다. 새 스타일을 만들지 않는다. 내용은 베끼지 말고 대상 화면에 맞게 쓴다.',
+      i.anchor.content,
+    );
+  }
   out.push('', '## 승인된 앞 문서');
   if (i.inputDocs.length === 0) out.push('(없음)');
   for (const d of i.inputDocs) out.push('', `### ${d.path}${d.status === 'draft' ? ' (검토 전 초안)' : ''}`, d.content);
   if (isChange) out.push('', '## 화면 파일 목록', ...(i.screenFiles.length ? i.screenFiles.map((f) => `- ${f}`) : ['(없음)']));
   if (i.current !== undefined) out.push('', '## 현재 본문', i.current);
+  if (i.feedback !== undefined) out.push('', '## 피드백', i.feedback);
+  return out.join('\n') + '\n';
+}
+
+// 디자인 문서(2-DESIGN.md) 생성. 기준 문서(사용자가 넣은 것)가 있으면 그것을 반영해, 값은 그대로 두고 필요한 것만 덧붙인다.
+const DESIGN_COMMON = [
+  '- 이 문서는 이후 모든 화면(screens/*.html)이 따르는 색·글꼴·간격·컴포넌트의 유일한 기준이다.',
+  '- 문서 맨 앞이 YAML 머리말이므로 문서 규칙의 `예정` 표시는 이 문서에 쓰지 않는다.',
+  '- 색은 16진수, 크기는 px로 쓴다. 글자 대비 4.5:1 이상(24px 이상은 3:1)을 지키는 조합만 쓴다.',
+  '- 글꼴은 외부에서 불러오지 않는다. 대체 글꼴 목록을 함께 적는다.',
+  '- 요구사항에 나오는 표·폼·목록·대화상자 등 실제로 필요한 컴포넌트와 그 상태(기본·호버·포커스·비활성·오류·빈 상태)를 정의한다.',
+  '- 제품 사실(기능, 문구, 수치)은 지어내지 않는다. 시각 값(색, 글꼴, 간격)은 제안해도 된다.',
+  '- 배경 그라데이션, 이모지 아이콘, 왼쪽 굵은 테두리 카드 같은 장식은 정의하지 않는다.',
+];
+const DESIGN_REPO = [
+  ...REPO_GUARD,
+  '- 작업 폴더의 코드(스타일시트·테마·컴포넌트)를 읽어 실제로 쓰는 색·글꼴·간격·컴포넌트를 근거로 만든다. 코드로 확인되지 않는 값은 지어내지 않고 `확인 필요`로 남긴다.',
+];
+const DESIGN_NEW = [
+  '- 기준이 되는 디자인 문서가 없다. 앞 문서의 대상 기기·플랫폼과 사용자에 맞는 분위기를 골라 새로 만든다.',
+  '- 형식은 DESIGN.md다: 맨 앞 YAML 머리말(`---`)에 `name`, `description`, `colors`, `typography`, `rounded`, `spacing`, `components` 토큰을 두고, 본문은 Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do\'s and Don\'ts 절로 나눈다. 설명은 한국어로 쓴다.',
+];
+const DESIGN_BASED = [
+  '- 아래 "기준 디자인 문서"를 반영해 만든다. 그 문서의 토큰 값(색·글꼴·간격·모서리)과 디자인 원칙은 바꾸지 않고 그대로 둔다.',
+  '- 기준 문서에 없지만 이 제품의 요구사항에 필요한 컴포넌트와 상태, 대상 기기에 맞는 반응형·접근성 기준만 덧붙인다.',
+  '- 기준 문서의 머리말 키와 절 순서를 유지한다.',
+];
+
+export function buildDesignPrompt(i: {
+  idea: string; summary: string | null; designMd: string | null;
+  inputDocs: { path: string; content: string }[]; feedback?: string;
+  repo?: string | null; // 저장소 프로젝트면 owner/repo (작업 폴더가 클론)
+}): string {
+  const base = i.designMd !== null && i.designMd.trim() !== '' ? i.designMd : null;
+  const out: string[] = [
+    '대상 문서: 2-DESIGN.md',
+    '',
+    ...repoHeader(i.repo),
+    '## 출력 규칙',
+    '- 문서 본문만 출력한다 (서두·맺음말 없음).',
+    ...(i.repo ? DESIGN_REPO : []),
+    ...DESIGN_COMMON,
+    ...(base ? DESIGN_BASED : DESIGN_NEW),
+    ...(i.feedback !== undefined ? ['- 피드백을 반영해 문서 전체를 다시 쓴다. 피드백이 바꾸라고 한 부분은 위 유지 규칙보다 우선한다.'] : []),
+    '',
+    '## 문서 규칙 (AGENTS.md)',
+    readDocRules().trimEnd(),
+    '',
+    '## 아이디어',
+    ideaText(i.idea, i.repo),
+  ];
+  if (i.summary) out.push('', '## 인터뷰 요약', i.summary);
+  if (base) out.push('', '## 기준 디자인 문서', base);
+  out.push('', '## 승인된 앞 문서');
+  if (i.inputDocs.length === 0) out.push('(없음)');
+  for (const d of i.inputDocs) out.push('', `### ${d.path}`, d.content);
   if (i.feedback !== undefined) out.push('', '## 피드백', i.feedback);
   return out.join('\n') + '\n';
 }

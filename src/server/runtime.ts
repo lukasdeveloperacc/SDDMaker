@@ -1,4 +1,5 @@
-import type { BatchView, LoginTarget, RunKind } from '@/lib/contract';
+import { MAX_PARALLEL, type BatchView, type LoginTarget, type RunKind, type RunProgress } from '../lib/contract';
+import { emitProject } from './events';
 import { randomUUID } from 'node:crypto';
 
 interface RunEntry {
@@ -8,6 +9,8 @@ interface RunEntry {
   released: Promise<void>;
   markReleased: () => void;
   batch?: { currentPath: string | null; error: BatchView['error'] };
+  progress?: RunProgress;
+  shared?: boolean; // 같은 종류(요구사항 문서)의 실행이 함께 들어올 수 있는 잠금
 }
 
 interface LoginEntry {
@@ -34,6 +37,7 @@ export interface RunHandle {
   path: string | null;
   controller: AbortController;
   setBatch(currentPath: string | null, error?: BatchView['error']): void;
+  setProgress(progress: RunProgress): void;
   release(): void;
 }
 
@@ -44,6 +48,7 @@ export function acquireRun(projectId: number, kind: RunKind, path: string | null
   const released = new Promise<void>((resolve) => { markReleased = resolve; });
   const entry: RunEntry = { kind, path, controller, released, markReleased };
   state.runs.set(projectId, entry);
+  emitProject(projectId);
 
   let done = false;
   return {
@@ -51,19 +56,59 @@ export function acquireRun(projectId: number, kind: RunKind, path: string | null
     kind,
     path,
     controller,
-    setBatch(currentPath, error = null) { entry.path = currentPath; entry.batch = { currentPath, error }; },
+    setProgress(progress) { entry.progress = progress; emitProject(projectId); },
+    setBatch(currentPath, error = null) { entry.path = currentPath; entry.batch = { currentPath, error }; emitProject(projectId); },
     release() {
       if (done) return;
       done = true;
       if (state.runs.get(projectId) === entry) state.runs.delete(projectId);
       markReleased();
+      emitProject(projectId);
     },
   };
 }
 
-export function getRun(projectId: number): { kind: RunKind; path: string | null } | null {
+// 요구사항 문서 한 개의 생성 잠금. 잠금이 없으면 공유 잠금을 만들고, 이미 공유 잠금이면 MAX_PARALLEL개까지 함께 들어간다.
+// 취소(cancelRun)는 함께 도는 실행을 모두 멈춘다. 다른 종류의 실행이 있으면 null.
+export function acquireSharedRun(projectId: number, path: string): RunHandle | null {
+  let entry = state.runs.get(projectId);
+  if (entry && !entry.shared) return null;
+  if (entry && (entry.progress!.active.length >= MAX_PARALLEL || entry.progress!.active.includes(path))) return null;
+  if (!entry) {
+    let markReleased!: () => void;
+    const released = new Promise<void>((resolve) => { markReleased = resolve; });
+    entry = { kind: 'requirements', path: null, controller: new AbortController(), released, markReleased, shared: true,
+      progress: { total: 0, done: [], active: [], failed: [] } };
+    state.runs.set(projectId, entry);
+  }
+  const group = entry;
+  const progress = group.progress!;
+  progress.total += 1;
+  progress.active.push(path);
+  emitProject(projectId);
+  const child = new AbortController();
+  group.controller.signal.addEventListener('abort', () => child.abort(), { once: true });
+  let done = false;
+  return {
+    projectId, kind: 'requirements', path, controller: child,
+    setBatch() {}, setProgress() {},
+    release() {
+      if (done) return;
+      done = true;
+      progress.active.splice(progress.active.indexOf(path), 1);
+      progress.done.push(path);
+      if (progress.active.length === 0) {
+        if (state.runs.get(projectId) === group) state.runs.delete(projectId);
+        group.markReleased();
+      }
+      emitProject(projectId);
+    },
+  };
+}
+
+export function getRun(projectId: number): { kind: RunKind; path: string | null; progress?: RunProgress; shared?: boolean } | null {
   const entry = state.runs.get(projectId);
-  return entry ? { kind: entry.kind, path: entry.path } : null;
+  return entry ? { kind: entry.kind, path: entry.path, ...(entry.progress ? { progress: { ...entry.progress, active: [...entry.progress.active] } } : {}), ...(entry.shared ? { shared: true } : {}) } : null;
 }
 
 // 취소 신호를 보내고, 실행 잠금이 풀릴 때까지 최대 waitMs 기다린다.

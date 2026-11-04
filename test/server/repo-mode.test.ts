@@ -178,7 +178,7 @@ describe('저장소 프로젝트 실행 경로', () => {
     expect(generationPrompt(id, '0-PRODUCT.md')).toContain(`기준 커밋: ${sha}`);
   });
 
-  it('승인된 화면 정의서 흐름 문서는 저장소 프로젝트에서 화면 행을 만들지 않는다', async () => {
+  it('승인된 흐름 문서의 화면 링크는 저장소 프로젝트에서도 화면 행을 만든다', async () => {
     const id = repoProject();
     makeClone(id);
     createInterview(id, 'claude', 'skipped');
@@ -188,6 +188,6 @@ describe('저장소 프로젝트 실행 경로', () => {
     updateDocument(id, '4-USERFLOW.md', { content: '[홈](screens/home.html)', status: 'draft' });
     const res = await approvePOST(jsonReq('POST', `${URL_BASE}/${id}/documents/4-USERFLOW.md/approve`), ctx({ id: String(id), path: '4-USERFLOW.md' }));
     expect(res.status).toBe(200);
-    expect(listDocuments(id).some((d) => d.path.startsWith('screens/'))).toBe(false);
+    expect(listDocuments(id).filter((d) => d.path.startsWith('screens/')).map((d) => d.path)).toEqual(['screens/home.html']);
   });
 });
