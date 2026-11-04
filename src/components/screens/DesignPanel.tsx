@@ -1,38 +1,33 @@
 'use client';
 
-import { useId, useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { api, ApiRequestError } from '@/lib/api';
 import type { ProjectDetail } from '@/lib/contract';
 import { useAgentRun } from '@/lib/use-agent-run';
 import { useAgentChoice } from '@/components/AgentChoice';
 import { RunStatus } from '@/components/RunStatus';
-import { STATUS_TEXT } from '@/components/StageNav';
 import { Button, Notice, TextArea } from '@/components/ui';
 
 interface Props {
   projectId: number;
   detail: ProjectDetail;
   refresh: () => Promise<void>;
-  // 기준 화면 패널을 그리는 함수. 화면 패널은 페이지가 연결한다.
-  renderScreen: (path: string) => ReactNode;
+  onNavigate: (key: string) => void;
 }
 
-// 디자인 문서와 기준 화면을 한 곳에서 함께 만든다.
+// 디자인 문서만 다룬다. 화면(기준 화면 포함)은 화면 정의서 단계에서 만든다.
 // 편집기의 내용이 "작업본"이다: 생성은 작업본을 반영해 작업본을 바꾸기만 하고, 저장해야 프로젝트에 반영된다.
-export function DesignPanel({ projectId, detail, refresh, renderScreen }: Props) {
+export function DesignPanel({ projectId, detail, refresh, onNavigate }: Props) {
   const saved = detail.project.designMd ?? '';
   const agent = useAgentChoice();
   const run = useAgentRun();
-  const selectId = useId();
   const [text, setText] = useState(saved);
   const [feedback, setFeedback] = useState('');
-  const [anchor, setAnchor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const screens = detail.documents.filter((d) => d.kind === 'screen' && !d.missingFromList);
-  const anchorPath =
-    screens.find((d) => d.path === anchor)?.path ?? (screens.find((d) => d.status === 'approved') ?? screens[0])?.path;
+  const nextScreen = (screens.find((d) => d.status !== 'approved') ?? screens[0])?.path;
   const reqs = detail.documents.filter((d) => d.kind === 'requirement' && !d.missingFromList);
   const repo = detail.project.repo !== null;
   const noScreens = repo && screens.length === 0; // 저장소 프로젝트도 USERFLOW에 화면 링크가 있으면 화면(프로토타입)을 만든다
@@ -78,7 +73,7 @@ export function DesignPanel({ projectId, detail, refresh, renderScreen }: Props)
         <p className="caption">
           {noScreens
             ? '저장소의 코드를 읽어 디자인 문서를 만듭니다. 만들거나 붙여 넣어 저장하세요. 화면(프로토타입)은 4-USERFLOW.md에 화면 링크가 있을 때 만들 수 있습니다.'
-            : '디자인 문서와 기준 화면을 함께 확인합니다. 문서를 만들거나 붙여 넣어 저장하고, 아래에서 기준 화면 하나를 만들어 모습을 본 뒤 문서나 화면을 고치세요. 기준 화면을 승인하면 나머지 화면이 이 문서와 그 화면을 따릅니다.'}
+            : '문서를 만들거나 붙여 넣어 저장하세요. 저장한 문서는 모든 화면이 따르는 기준입니다. 화면 정의서에서 화면 하나를 만들어 승인하면 나머지 화면이 그 화면을 따릅니다.'}
         </p>
       </header>
 
@@ -132,26 +127,16 @@ export function DesignPanel({ projectId, detail, refresh, renderScreen }: Props)
         <p className="caption">요구사항 문서를 모두 승인하면 생성할 수 있습니다. 붙여 넣은 문서는 지금도 저장할 수 있습니다.</p>
       )}
 
-      {noScreens ? null : saved.trim() === '' ? (
+      {noScreens || screens.length === 0 ? null : saved.trim() === '' ? (
         <Notice tone="info">
-          <p className="notice-body">디자인 문서를 저장하면 기준 화면을 만들 수 있습니다.</p>
+          <p className="notice-body">디자인 문서를 저장하면 화면 정의서를 만들 수 있습니다.</p>
         </Notice>
       ) : (
-        anchorPath && (
-          <div className="stack">
-            <div className="field">
-              <label htmlFor={selectId}>기준 화면</label>
-              <select id={selectId} value={anchorPath} onChange={(e) => setAnchor(e.target.value)}>
-                {screens.map((d) => (
-                  <option key={d.path} value={d.path}>
-                    {d.name} · {STATUS_TEXT[d.status].text}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {renderScreen(anchorPath)}
-          </div>
-        )
+        <div>
+          <Button variant="secondary" disabled={locked} onClick={() => nextScreen && onNavigate(nextScreen)}>
+            화면 정의서로 이동
+          </Button>
+        </div>
       )}
     </div>
   );

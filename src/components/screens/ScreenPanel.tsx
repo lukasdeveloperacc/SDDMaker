@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { docApiPath } from '@/lib/contract';
 import { api, ApiRequestError } from '@/lib/api';
-import { extractHtml, missingScreenLinks, sanitizeHtml, screenLinkTarget } from '@/lib/screens/html';
+import { missingScreenLinks, sanitizeHtml, screenLinkTarget } from '@/lib/screens/html';
 import { truncateLabel } from '@/lib/screens/geometry';
 import { useAnnotations } from '@/lib/screens/annotations-store';
 import { useAgentRun } from '@/lib/use-agent-run';
@@ -75,6 +75,14 @@ export function ScreenPanel({
   const [editOpen, setEditOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg | null>(null);
+  const previewBox = useRef<HTMLDivElement>(null);
+
+  // 링크를 눌러 이 화면으로 왔으면 흐름을 따라가기 좋게 화면을 가운데로 맞춘다.
+  useEffect(() => {
+    if (trail.length > 0) previewBox.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    // 화면이 바뀔 때만 (이 패널은 화면마다 새로 만들어진다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!doc) return <Notice tone="error">문서를 찾지 못했습니다.</Notice>;
 
@@ -146,25 +154,11 @@ export function ScreenPanel({
     setMsg(null);
     if (!(await saveDraft())) return;
     const body = feedbackText ? { agent, feedback: feedbackText } : { agent };
+    // 서버가 끝나는 대로 저장한다 (화면을 떠나도, 다른 화면과 동시에 만들어도 이어진다).
     const r = await run.start(docApiPath(projectId, path, 'generate'), body);
     if (!r.ok) return;
-
-    const clean = sanitizeHtml(extractHtml(r.text));
-    if (!clean) {
-      setMsg({ tone: 'error', text: '생성 결과에 화면 HTML이 없습니다. 다시 생성해 주세요.' });
-      return;
-    }
-    setBusy(true);
-    try {
-      // generatedBy는 이 저장에만 보낸다 (화면 재생성이 "앞 문서 변경됨"을 지우게)
-      await api('PUT', docUrl, { content: clean, keepUndo: true, generatedBy: agent });
-      setFeedback('');
-      await refresh();
-    } catch (e) {
-      setMsg(errorOf(e));
-    } finally {
-      setBusy(false);
-    }
+    setFeedback('');
+    await refresh();
   }
 
   const gate = doc.generate;
@@ -189,6 +183,12 @@ export function ScreenPanel({
 
   const generatorBlock = (
     <div className="stack">
+      {doc.running && !run.running && (
+        <div className="row">
+          <p className="caption">이 화면을 생성하고 있습니다.</p>
+          <Button variant="utility" onClick={() => void api('DELETE', `/api/projects/${projectId}/run`).catch(() => {})}>취소</Button>
+        </div>
+      )}
       <RunStatus run={run} agent={agent} />
     </div>
   );
@@ -309,7 +309,7 @@ export function ScreenPanel({
           )}
 
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 390px', minWidth: 0 }}>
+            <div ref={previewBox} style={{ flex: '1 1 390px', minWidth: 0 }}>
               <ScreenPreview
                 html={doc.content}
                 width={width}

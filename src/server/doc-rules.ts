@@ -78,6 +78,11 @@ export function extractLinks(
 
 // 전체가 울타리 하나(``` 또는 ```markdown/```md)일 때만 벗긴다.
 const FENCE_RE = /^```(?:markdown|md)?[^\S\n]*\n([\s\S]*?)\n?```$/;
+// 화면은 브라우저가 정리해 저장하던 문서인데, 서버가 저장하는 경로(생성·동기화)에는 DOM이 없다.
+// 위험해 보이는 결과는 고치지 않고 거절한다.
+// shortcut: 정규식 검사라 완전하지 않다. 화면 미리보기가 격리된 iframe이어서 허용한다. 서버 정리가 필요하면 파서를 넣는다.
+export const UNSAFE_HTML = /<script|\son[a-z]+\s*=|javascript:/i;
+
 export function stripFence(text: string): string {
   const t = text.trim();
   const m = FENCE_RE.exec(t);
@@ -230,8 +235,8 @@ export function buildDocumentViews(input: {
       missingFromList: missing.has(d.path),
       canUndo: d.previousContent !== null,
       running,
-      // 요구사항 문서끼리는 함께 만들 수 있다 (공유 잠금, 동시 MAX_PARALLEL개까지)
-      generate: generateGate(d, ctx, input.running !== null && !(input.running.shared && kind === 'requirement' && (input.running.progress?.active.length ?? 0) < MAX_PARALLEL)),
+      // 요구사항 문서끼리, 화면끼리는 함께 만들 수 있다 (공유 잠금, 동시 MAX_PARALLEL개까지)
+      generate: generateGate(d, ctx, input.running !== null && !(input.running.shared && (kind === 'requirement' || kind === 'screen') && (input.running.progress?.active.length ?? 0) < MAX_PARALLEL)),
       approve: approveGate(d, ctx, running || input.running?.kind === 'batch', links),
       links,
     };

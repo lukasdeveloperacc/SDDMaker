@@ -289,12 +289,13 @@ describe('화면 정의서', () => {
     return p;
   }
 
-  it('생성 응답은 원문이고 저장하지 않는다', async () => {
+  it('생성하면 서버가 HTML을 초안으로 저장한다', async () => {
     const p = screenReady();
     const events = await generateAndWait(p.id, 'screens/home.html', { agent: 'codex' });
     const done = events.find((e) => e.event === 'done');
     expect(done?.data.text).toContain('data-component="top-bar"');
-    expect(getDocument(p.id, 'screens/home.html')).toMatchObject({ content: '', status: 'empty' });
+    expect(getDocument(p.id, 'screens/home.html')).toMatchObject({ status: 'draft', agent: 'codex' });
+    expect(getDocument(p.id, 'screens/home.html')?.content).toContain('data-component="top-bar"');
   });
 
   it('디자인 문서가 없으면 생성은 design_required', async () => {

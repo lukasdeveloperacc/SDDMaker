@@ -23,7 +23,7 @@
 | 프로젝트 생성·목록·유지·삭제, 디자인 문서 입력 | [requirements/project.md](requirements/project.md) |
 | 초기 인터뷰 (시작 전·도중 건너뛰기 가능) | [requirements/interview.md](requirements/interview.md) |
 | 문서 세트 단계별 생성·편집·피드백·승인·승인 취소 | [requirements/documents.md](requirements/documents.md) |
-| 디자인 단계 (디자인 문서 생성·편집, 기준 화면 1개와 함께 확인 — 붙여 넣은 디자인 문서가 있으면 반영해 생성) | [requirements/screens.md](requirements/screens.md#디자인-단계) |
+| 디자인 단계 (디자인 문서 생성·편집 — 붙여 넣은 디자인 문서가 있으면 반영해 생성. 화면은 화면 정의서 단계에서 만든다) | [requirements/screens.md](requirements/screens.md#디자인-단계) |
 | 화면 정의서 (HTML 목업, 화면 간 링크로 넘겨 보는 프로토타입, 컴포넌트 선택·그리기 주석으로 수정) | [requirements/screens.md](requirements/screens.md) |
 | 에이전트 연동 (구독 로그인 CLI, 단계별 선택, 사용량 표시) | [requirements/agent-cli.md](requirements/agent-cli.md) |
 | 승인 문서 zip 내보내기 | [requirements/export.md](requirements/export.md) |

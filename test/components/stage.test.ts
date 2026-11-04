@@ -113,18 +113,18 @@ describe('디자인 단계', () => {
   };
   const nav = (d: ProjectDetail) => renderToStaticMarkup(createElement(StageNav, { detail: d, selected: 'export', onSelect: () => {} }));
 
-  it('승인된 화면이 없으면 첫 화면 대신 디자인 단계를 연다 (붙여 넣은 문서가 있어도)', () => {
+  it('디자인 문서가 없으면 첫 화면 대신 디자인 단계를 열고, 있으면 화면을 연다', () => {
     const docs = [doc('0-PRODUCT.md', { status: 'approved' }), screen()];
     expect(defaultStageKey(withDesign(docs))).toBe('design');
-    expect(defaultStageKey(withDesign(docs, '# 이미 붙여 넣은 문서'))).toBe('design');
+    expect(defaultStageKey(withDesign(docs, '# 이미 붙여 넣은 문서'))).toBe('screens/home.html');
   });
 
-  it('기준 화면을 만드는 동안(초안)에는 디자인 단계에 머문다', () => {
+  it('화면을 만드는 동안(초안)에는 그 화면에 머문다', () => {
     const docs = [doc('0-PRODUCT.md', { status: 'approved' }), screen({ status: 'draft', content: '<html></html>' })];
-    expect(defaultStageKey(withDesign(docs, '# 문서'))).toBe('design');
+    expect(defaultStageKey(withDesign(docs, '# 문서'))).toBe('screens/home.html');
   });
 
-  it('기준 화면을 승인하면 다른 단계처럼 아직 승인 안 된 다음 화면으로 넘어간다', () => {
+  it('화면을 승인하면 다른 단계처럼 아직 승인 안 된 다음 화면으로 넘어간다', () => {
     const docs = [
       doc('0-PRODUCT.md', { status: 'approved' }),
       screen({ status: 'approved', content: '<html></html>' }),

@@ -192,6 +192,11 @@ describe('previewDocument', () => {
     expect(out.startsWith('<!DOCTYPE html>')).toBe(true);
   });
 
+  it('프레임 안에서 스크롤되도록 넘침 숨김을 덮어쓴다', () => {
+    const doc = parseDoc(previewDocument(src));
+    expect(doc.head.lastElementChild?.textContent).toContain('overflow:auto !important');
+  });
+
   it('입력 문자열은 바뀌지 않는다', () => {
     const copy = src;
     previewDocument(src);

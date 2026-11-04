@@ -12,12 +12,11 @@ export function isInterviewDone(interview: Interview | null): boolean {
 }
 
 // 처음 열었을 때 고를 단계: 아직 끝나지 않은 첫 단계. 목록에서 빠진 문서는 막지 않는다.
-// 승인된 화면이 아직 없으면 화면 대신 디자인 단계를 연다. 기준 화면을 만드는 동안 이 단계에 머물고,
-// 기준 화면을 승인하면(다른 단계처럼) 다음 화면으로 넘어간다.
+// 화면 차례인데 디자인 문서가 아직 없으면 화면 대신 디자인 단계를 연다 (화면은 디자인 문서가 있어야 만든다).
 export function defaultStageKey(detail: ProjectDetail): string {
   if (!isInterviewDone(detail.interview)) return INTERVIEW_KEY;
   const open = detail.documents.find((d) => d.status !== 'approved' && !d.missingFromList);
-  if (open?.kind === 'screen' && !detail.documents.some((d) => d.kind === 'screen' && d.status === 'approved')) return DESIGN_KEY;
+  if (open?.kind === 'screen' && !hasDesign(detail)) return DESIGN_KEY;
   return open ? open.path : EXPORT_KEY;
 }
 

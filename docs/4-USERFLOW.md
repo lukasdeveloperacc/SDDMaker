@@ -22,7 +22,7 @@
                                      ▼
             requirements/<기능> × N  (순서 없음)
                                      ▼
-            디자인 문서 + 기준 화면 1개  (붙여 넣은 문서가 있으면 반영해 생성, 화면으로 함께 확인)
+            디자인 문서  (붙여 넣은 문서가 있으면 반영해 생성)
                                      ▼
             screens/<화면> × N  (순서 없음, 디자인 문서 필요, 승인된 기준 화면을 따름, 주석 모드로 컴포넌트 선택·그리기 수정)
                                      ▼
@@ -36,7 +36,7 @@
 1. **프로젝트 생성** — 이름과 아이디어를 입력하고, 가진 디자인 문서가 있으면 붙여 넣는다. 없어도 디자인 단계에서 만들 수 있다. → [requirements/project.md](requirements/project.md)
 2. **인터뷰 (선택)** — 연결 화면의 기본 실행 설정(작업 화면의 접힌 실행 설정에서 이번 작업만 바꿀 수 있다)으로 에이전트를 정하고 질문에 하나씩 답한다. 끝나면 요약을 편집·승인한다. 건너뛰면 아이디어만으로 시작한다. → [requirements/interview.md](requirements/interview.md)
 3. **기본 문서·요구사항 문서** — 같은 실행 설정으로 생성한다(중간에 바꿔도 된다). 직접 편집하거나 피드백으로 재생성하고, 마음에 안 들면 되돌린다. 승인하면 다음 단계가 열린다. `0-PRODUCT.md` 승인 때 요구사항 문서 목록이, `4-USERFLOW.md` 승인 때 화면 목록이 정해진다. → [requirements/documents.md](requirements/documents.md)
-4. **디자인** — 요구사항을 모두 승인하면 열린다. 디자인 문서를 만들거나(붙여 넣은 문서가 있으면 그 값은 그대로 두고 필요한 것만 덧붙여) 저장한 뒤, 같은 화면에서 기준 화면 하나를 만들어 모습을 보고 문서나 화면을 고쳐 기준 화면을 승인한다. → [requirements/screens.md](requirements/screens.md#디자인-단계)
+4. **디자인** — 요구사항을 모두 승인하면 열린다. 디자인 문서를 만들거나(붙여 넣은 문서가 있으면 그 값은 그대로 두고 필요한 것만 덧붙여) 저장한다. 화면은 다음 단계에서 만든다. → [requirements/screens.md](requirements/screens.md#디자인-단계)
 5. **화면 정의서** — 화면마다 HTML 목업을 생성하고(승인된 기준 화면을 따른다), 미리보기에서 컴포넌트를 고르거나 그림을 그려 주석을 쌓은 뒤 한 번에 보내 고친다. → [requirements/screens.md](requirements/screens.md)
 6. **변경 기록** — `changes/001-mvp.md`를 생성·승인한다. → [requirements/documents.md](requirements/documents.md)
 7. **내보내기** — 승인된 문서 세트를 `docs/` 구조의 zip으로 내려받는다. → [requirements/export.md](requirements/export.md)

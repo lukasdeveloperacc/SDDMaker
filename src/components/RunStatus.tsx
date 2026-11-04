@@ -4,16 +4,11 @@ import { agentErrorHelp, isAgentErrorCode } from '@/lib/agent-errors';
 import type { AgentRun } from '@/lib/use-agent-run';
 import { Button, Notice } from '@/components/ui';
 
-export function RunStatus({ run, agent }: { run: AgentRun; agent: AgentName }) {
+export function RunStatus({ run }: { run: AgentRun; agent?: AgentName }) {
   if (run.running) {
     return (
       <div className="stack" aria-live="polite">
-        {agent === 'claude' ? (
-          <pre className="run-stream">{run.text || '생성 중…'}</pre>
-        ) : (
-          <p className="caption">생성 중 · {run.elapsedSec}초</p>
-        )}
-        {agent === 'claude' && <p className="caption">{run.elapsedSec}초 경과</p>}
+        <p className="caption">생성 중… · {run.elapsedSec}초</p>
         <div>
           <Button variant="utility" onClick={run.cancel}>
             취소

@@ -1,7 +1,8 @@
 import { batchBusy } from '@/server/runtime';
 import { isAgentName } from '@/lib/contract';
-import { kindOf, laterWithContent, stripFence } from '@/server/doc-rules';
-import { getAdapter } from '@/server/agents';
+import { extractHtml } from '@/lib/screens/html';
+import { kindOf, laterWithContent, stripFence, UNSAFE_HTML } from '@/server/doc-rules';
+import { AgentError, getAdapter } from '@/server/agents';
 import { flagUpstream, getDocument, listDocuments, tx, updateDocument } from '@/server/db';
 import { generationPrompt, resolveDocRef, runDirOf, viewOf } from '@/server/documents';
 import { apiError, gateError, readJson } from '@/server/http';
@@ -10,7 +11,7 @@ import { acquireRun, acquireSharedRun } from '@/server/runtime';
 
 export const runtime = 'nodejs';
 
-// 마크다운은 저장하고 done.text에 저장 본문을 준다. 화면 정의서는 저장하지 않고 응답 원문을 준다.
+// 생성 결과는 서버가 저장하고 done.text에 저장 본문을 준다. 화면 정의서 주석 반영(annotations)만 브라우저가 저장한다.
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; path: string }> }) {
   const { id, path } = await ctx.params;
   const ref = resolveDocRef(id, path);
@@ -33,8 +34,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
     return apiError(400, 'invalid_input', '본문이 없으면 피드백으로 다시 생성할 수 없습니다');
   }
 
-  // 요구사항 문서는 서로 입력이 겹치지 않아 함께 만들 수 있다.
-  const handle = kindOf(ref.path) === 'requirement' ? acquireSharedRun(ref.projectId, ref.path) : acquireRun(ref.projectId, 'document', ref.path);
+  // 요구사항 문서끼리, 화면끼리는 서로 입력이 겹치지 않아 함께 만들 수 있다.
+  const handle = kindOf(ref.path) === 'requirement' || kindOf(ref.path) === 'screen' ? acquireSharedRun(ref.projectId, ref.path) : acquireRun(ref.projectId, 'document', ref.path);
   if (!handle) return apiError(409, 'busy', '이 프로젝트에서 다른 작업이 실행 중입니다');
   const isScreen = kindOf(ref.path) === 'screen';
 
@@ -42,14 +43,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
     req,
     handle,
     agent,
-    detached: !isScreen, // 마크다운은 서버가 저장하므로 화면을 떠나도 이어 간다
+    detached: true, // 서버가 저장하므로 화면을 떠나도 이어 간다
     execute: async ({ onDelta, signal }) => {
       const dir = runDirOf(ref.projectId); // 클론이 없으면 프롬프트를 만들기 전에 멈춘다
       const prompt = generationPrompt(ref.projectId, ref.path, feedback);
       const result = await getAdapter(agent).run({ prompt, signal, onDelta, repoDir: dir });
-      if (isScreen) return result.text;
 
-      const text = stripFence(result.text);
+      const text = isScreen ? extractHtml(result.text) : stripFence(result.text);
+      if (isScreen && !text.includes('<')) throw new AgentError('agent_failed', '생성 결과에 화면 HTML이 없습니다');
+      if (isScreen && UNSAFE_HTML.test(text)) throw new AgentError('agent_failed', '스크립트나 이벤트 속성이 들어 있어 저장하지 않았습니다');
       // 저장 직전: 연결이 끊겼거나 취소됐으면 아무것도 바꾸지 않는다.
       signal.throwIfAborted();
       const cur = getDocument(ref.projectId, ref.path);

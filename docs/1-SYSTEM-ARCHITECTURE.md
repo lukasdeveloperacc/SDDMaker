@@ -233,6 +233,7 @@ Codex의 Linux read-only sandbox는 Docker 호스트의 namespace·seccomp 정�
 - ZIP과 PR은 [`src/server/export.ts`](../src/server/export.ts)의 공통 `exportFiles`에서 원래 `docs/AGENTS.md`를 보존한다. 안전하게 읽을 수 없는 원본 규칙은 `export_blocked/items`로 중단하고, 원본이 없을 때만 앱 규칙을 넣는다. 원본의 UTF-8 BOM과 줄바꿈도 보존한다.
 - PR 미리보기와 push 직전에 인증된 git으로 기본 브랜치 SHA를 확인한다. 확인한 클론 기준 SHA에서 worktree를 만들고, 검토 토큰과 덮어쓰기 명시 확인을 검증한다. 원격 차이는 `repo_stale` 409, 조회 불능은 `pr_failed` 502다. 클론 fetch/reset/rebase는 하지 않는다. 미리보기·POST·push 직전에 최신성을 확인한다. 마지막 확인 뒤 원격이 바뀔 수 있어 원자적 원격 잠금을 주장하지 않는다.
 - 실행 잠금은 프로젝트당 하나다. 요구사항 문서 생성만 `acquireSharedRun`으로 같은 잠금을 공유하며 자식 중단 컨트롤러로 동시 3개(`MAX_PARALLEL`)까지 돈다. 잠금·진행·문서·디자인 변경은 `src/server/events.ts`의 프로젝트별 발행으로 `GET /api/projects/:id/events`(SSE)에 흘러 화면이 폴링 없이 상세를 다시 읽는다. 마크다운 생성은 연결이 끊겨도 서버가 끝까지 저장하고(`detached`), 취소는 `DELETE /api/projects/:id/run`만 한다 ([changes/016](changes/016-parallel-requirements.md)).
+- 앞 문서 변경 반영은 `POST /api/projects/:id/sync`다. `requirements` 잠금 하나로 요구사항을 3개씩, 이어서 화면을 3개씩 `generationPrompt`의 피드백(현재 본문 유지, 어긋난 부분만 수정)으로 다시 쓴다. 화면 단계는 방금 갱신한 요구사항 초안을 입력으로 쓰려고 배치 입력 규칙(`batch=true`)을 재사용한다. 서버에는 DOM이 없어 화면 결과는 정리하지 않고 위험한 패턴이면 거절한다 ([changes/017](changes/017-sync-upstream.md)).
 
 ## 디자인 단계 구조 (015)
 

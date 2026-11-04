@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentChoice } from '@/components/AgentChoice';
@@ -26,7 +26,7 @@ let host: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
 const refresh = vi.fn(async () => {});
-const renderScreen = vi.fn((path: string): ReactNode => createElement('div', { 'data-testid': 'anchor' }, `화면 패널 ${path}`));
+const onNavigate = vi.fn();
 
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -41,11 +41,11 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
   refresh.mockClear();
-  renderScreen.mockClear();
+  onNavigate.mockClear();
 });
 
 async function render(d: ProjectDetail, agent: AgentName = 'claude') {
-  await act(async () => root.render(createElement(AgentChoice.Provider, { value: agent }, createElement(DesignPanel, { projectId: 3, detail: d, refresh, renderScreen }))));
+  await act(async () => root.render(createElement(AgentChoice.Provider, { value: agent }, createElement(DesignPanel, { projectId: 3, detail: d, refresh, onNavigate }))));
 }
 const button = (label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
 const area = (label: string) => [...host.querySelectorAll('label')].find((l) => l.textContent === label)?.control as HTMLTextAreaElement;
@@ -123,22 +123,13 @@ describe('DesignPanel', () => {
     expect(host.textContent).toContain('생성 결과가 비어 있습니다');
   });
 
-  it('저장소 프로젝트는 요구사항 승인 없이 생성할 수 있고 기준 화면은 없다', async () => {
+  it('저장소 프로젝트는 요구사항 승인 없이 생성할 수 있고 화면 안내는 없다', async () => {
     const d = detail(null, [req({ status: 'draft' })]);
     d.project.repo = 'owner/repo';
     await render(d);
     expect(button('디자인 문서 생성')?.disabled).toBe(false);
     expect(host.textContent).toContain('저장소의 코드를 읽어');
-    expect(host.textContent).not.toContain('기준 화면');
-    expect(renderScreen).not.toHaveBeenCalled();
-  });
-
-  it('저장소 프로젝트도 화면 링크가 있으면 기준 화면(프로토타입)을 보여 준다', async () => {
-    const d = detail('# 저장본', [req(), screen('home')]);
-    d.project.repo = 'owner/repo';
-    await render(d);
-    expect(renderScreen).toHaveBeenLastCalledWith('screens/home.html');
-    expect(host.textContent).not.toContain('화면(프로토타입)은 4-USERFLOW.md');
+    expect(button('화면 정의서로 이동')).toBeUndefined();
   });
 
   it('다른 작업이 돌고 있으면 버튼을 모두 막는다', async () => {
@@ -147,25 +138,13 @@ describe('DesignPanel', () => {
     expect(area('디자인 문서 (DESIGN.md)').disabled).toBe(true);
   });
 
-  it('디자인 문서가 저장돼 있으면 기준 화면 패널을 보이고, 없으면 안내만 한다', async () => {
+  it('화면 패널은 이 단계에 없고, 문서가 저장돼 있어야 화면 정의서로 갈 수 있다', async () => {
     await render(detail(null, [req(), screen('home')]));
-    expect(host.textContent).toContain('디자인 문서를 저장하면 기준 화면을 만들 수 있습니다');
-    expect(renderScreen).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('디자인 문서를 저장하면 화면 정의서를 만들 수 있습니다');
+    expect(button('화면 정의서로 이동')).toBeUndefined();
 
-    await render(detail('# 저장본', [req(), screen('detail'), screen('home')]));
-    expect(renderScreen).toHaveBeenLastCalledWith('screens/detail.html'); // 승인된 화면이 없으면 첫 화면
-    expect(host.querySelector('[data-testid="anchor"]')?.textContent).toBe('화면 패널 screens/detail.html');
-  });
-
-  it('승인된 화면이 있으면 그것을 기준 화면으로 먼저 고르고, 목록에서 바꿀 수 있다', async () => {
-    await render(detail('# 저장본', [req(), screen('detail'), screen('home', { status: 'approved', content: '<html></html>' }), screen('old', { missingFromList: true })]));
-    expect(renderScreen).toHaveBeenLastCalledWith('screens/home.html');
-    const select = host.querySelector('select')!;
-    expect([...select.options].map((o) => o.value)).toEqual(['screens/detail.html', 'screens/home.html']); // 목록에서 빠진 화면은 없다
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'screens/detail.html');
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    expect(renderScreen).toHaveBeenLastCalledWith('screens/detail.html');
+    await render(detail('# 저장본', [req(), screen('detail', { status: 'approved', content: '<html></html>' }), screen('home')]));
+    await click(button('화면 정의서로 이동')!);
+    expect(onNavigate).toHaveBeenLastCalledWith('screens/home.html'); // 승인 안 된 첫 화면
   });
 });

@@ -11,6 +11,7 @@ import { StageNav, DESIGN_KEY, EXPORT_KEY, INTERVIEW_KEY, defaultStageKey } from
 import { ProjectHeader } from '@/components/projects/ProjectHeader';
 import { DocumentPanel } from '@/components/documents/DocumentPanel';
 import { BatchPanel } from '@/components/documents/BatchPanel';
+import { SyncPanel } from '@/components/documents/SyncPanel';
 import { ExportPanel } from '@/components/documents/ExportPanel';
 import { DesignPanel } from '@/components/screens/DesignPanel';
 import { ScreenPanel } from '@/components/screens/ScreenPanel';
@@ -127,17 +128,7 @@ export default function Page() {
   } else if (current === EXPORT_KEY) {
     panel = <ExportPanel projectId={id} detail={detail} />;
   } else if (current === DESIGN_KEY) {
-    // 기준 화면은 화면 패널을 그대로 쓴다. 화면 링크를 누르면 그 화면 단계로 가고, 뒤로 가면 이 단계로 돌아온다.
-    panel = (
-      <DesignPanel
-        projectId={id}
-        detail={detail}
-        refresh={refresh}
-        renderScreen={(path) => (
-          <ScreenPanel key={path} {...panelProps} path={path} trail={[]} onLinkNavigate={openScreen} onBack={back} />
-        )}
-      />
-    );
+    panel = <DesignPanel projectId={id} detail={detail} refresh={refresh} onNavigate={navigate} />;
   } else if (!detail.documents.some((d) => d.path === current)) {
     panel = <Notice tone="warn">이 단계는 목록에 없습니다. 왼쪽에서 다른 단계를 고르세요.</Notice>;
   } else if (current.startsWith('screens/')) {
@@ -165,6 +156,7 @@ export default function Page() {
         <div className="project-workspace">
           <aside className="project-sidebar">
             <BatchPanel projectId={id} detail={detail} refresh={refresh} />
+            <SyncPanel projectId={id} detail={detail} refresh={refresh} />
             <StageNav detail={detail} selected={current} onSelect={navigate} />
           </aside>
           <div className="project-panel">

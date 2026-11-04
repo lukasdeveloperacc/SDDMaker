@@ -154,6 +154,10 @@ export function previewDocument(html: string): string {
   for (const meta of Array.from(doc.querySelectorAll('meta[http-equiv]'))) {
     if ((meta.getAttribute('http-equiv') ?? '').toLowerCase() === 'refresh') meta.remove();
   }
+  // 휴대폰 프레임은 높이가 고정이고 body가 넘침을 숨기는 화면이 많다. 미리보기에서는 프레임 안에서 스크롤되게 한다.
+  const scroll = doc.createElement('style');
+  scroll.textContent = 'html,body{overflow:auto !important}';
   doc.head.prepend(base, csp);
+  doc.head.append(scroll);
   return serialize(doc);
 }

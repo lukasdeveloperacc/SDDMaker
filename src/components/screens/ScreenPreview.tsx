@@ -66,6 +66,8 @@ export function ScreenPreview({
   const dupRef = useRef<Set<string>>(new Set());
   const lastPt = useRef<Pt | null>(null);
   const modeRef = useRef<Mode>(mode);
+  const onLinkRef = useRef(onLink);
+  onLinkRef.current = onLink;
 
   const [view, setView] = useState<{ srcDoc: string; frame: 'mobile' | 'page' } | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -205,6 +207,14 @@ export function ScreenPreview({
       setScroll({ x: win.scrollX, y: win.scrollY });
       if (modeRef.current === 'select' && lastPt.current) hoverAt(lastPt.current.x, lastPt.current.y);
     });
+    // 보기 모드에서는 화면 위에 덮개를 두지 않는다 (입력·스크롤은 화면이 직접 받는다). 링크 클릭만 가로채 화면 이동으로 바꾼다.
+    doc.addEventListener('click', (e) => {
+      if (modeRef.current !== 'off') return;
+      const a = (e.target as Element | null)?.closest?.('a[href]');
+      if (!a) return;
+      e.preventDefault();
+      onLinkRef.current(a.getAttribute('href'));
+    });
     if (view.frame === 'page') setDocHeight(doc.documentElement.scrollHeight);
     onLoad({ frame: view.frame, components: comps, doc });
   }
@@ -216,7 +226,7 @@ export function ScreenPreview({
 
   return (
     <div style={{ maxWidth: '100%', overflowX: 'auto', overscrollBehavior: 'contain' }}>
-      <div style={{ position: 'relative', width: frameW, height: frameH }}>
+      <div style={{ position: 'relative', width: frameW, height: frameH, margin: '0 auto' }}>
         <iframe
           ref={iframeRef}
           title="화면 정의서 미리보기"
@@ -253,11 +263,6 @@ export function ScreenPreview({
             }
           }}
           onClick={(e) => {
-            if (mode === 'off') {
-              const a = elementAt(e.clientX, e.clientY)?.closest('a[href]');
-              if (a) onLink(a.getAttribute('href'));
-              return;
-            }
             if (mode === 'select') {
               const el = componentAt(e.clientX, e.clientY);
               if (!el) return;
@@ -276,7 +281,8 @@ export function ScreenPreview({
           style={{
             position: 'absolute',
             inset: 0,
-            cursor: mode === 'off' ? 'default' : 'crosshair',
+            pointerEvents: mode === 'off' ? 'none' : 'auto',
+            cursor: 'crosshair',
             touchAction: mode === 'draw' ? 'none' : 'auto',
           }}
         >
