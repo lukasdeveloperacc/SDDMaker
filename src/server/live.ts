@@ -188,7 +188,7 @@ export function livePrompt(): string {
     `Live is already booted: \`impeccable live\` ran, the helper is up, and screens/*.html already load live.js. Start directly at the poll loop: run "${skill}/scripts/impeccable" live-poll in the foreground (no background task, no --timeout).`,
     'Handle every event per its _instructions, then poll again immediately. Never end your turn while live mode is open, and never announce that you are waiting.',
     'The screens are screens/<name>.html; links like login.html go to screens/login.html. Keep each screen one self-contained HTML file: no <script>, no external assets, no on* attributes. Edit nothing outside this folder.',
-    'Stop only after an "exit" event, after running the cleanup in live.md.',
+    'This app owns the session lifetime: an "exit" event only means the page or tab was closed (the user may reopen it or open another view). Do NOT run the cleanup on "exit"; just poll again. Keep polling until you are stopped from outside.',
   ].join('\n');
 }
 

@@ -17,7 +17,18 @@ interface LiveStatus {
 }
 
 // impeccable live: 새 탭에서 화면 요소를 눌러 변형을 만들고 고른 뒤, 바뀐 화면을 가져온다.
-export function LivePanel({ projectId, name, refresh }: { projectId: number; name: string; refresh: () => Promise<void> }) {
+// 앱 안에서는 다른 호스트 이름(localhost↔127.0.0.1)으로 띄운다: 에이전트가 고치는 화면이 앱과 같은 출처에서 돌지 않게 한다 (live.js는 그대로 돈다).
+function isolatedOrigin(): string {
+  const host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+  return `${location.protocol}//${host}${location.port ? `:${location.port}` : ''}`;
+}
+
+export function LivePanel({ projectId, name, refresh, onActiveChange }: {
+  projectId: number;
+  name: string;
+  refresh: () => Promise<void>;
+  onActiveChange?: (active: boolean) => void;
+}) {
   const agent = useAgentChoice();
   const url = `/api/projects/${projectId}/live`;
   const [status, setStatus] = useState<LiveStatus | null>(null);
@@ -29,6 +40,7 @@ export function LivePanel({ projectId, name, refresh }: { projectId: number; nam
   }, [url]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { onActiveChange?.(status?.active ?? false); }, [status?.active, onActiveChange]);
   // 세션이 열려 있는 동안 바뀐 화면 수와 에이전트 상태를 따라간다.
   useEffect(() => {
     if (!status?.active) return;
@@ -53,7 +65,6 @@ export function LivePanel({ projectId, name, refresh }: { projectId: number; nam
       const e = (await res.json().catch(() => ({}))) as { message?: string };
       throw new ApiRequestError(res.status, 'live', e.message ?? 'live를 시작하지 못했습니다.');
     }
-    window.open(`/screens/${name}.html`, '_blank', 'noopener');
   });
   const importAll = () => act(async () => {
     const r = await api<{ saved: string[]; skipped: { path: string; reason: string }[] }>('POST', `${url}/import`);
@@ -79,7 +90,7 @@ export function LivePanel({ projectId, name, refresh }: { projectId: number; nam
           <span className="caption">
             {status.otherProject !== null
               ? `프로젝트 ${status.otherProject}에서 live가 열려 있습니다.`
-              : '새 탭에서 요소를 눌러 변형 3개를 만들고 골라 적용합니다.'}
+              : '여기서(또는 새 탭에서) 요소를 눌러 변형 3개를 만들고 골라 적용합니다.'}
           </span>
           {changed > 0 && <Button variant="primary" disabled={busy} onClick={() => void importAll()}>가져오기 · {changed}개</Button>}
         </div>
@@ -95,6 +106,13 @@ export function LivePanel({ projectId, name, refresh }: { projectId: number; nam
               : '에이전트가 멈췄습니다'}
           </span>
         </div>
+      )}
+      {status.active && (
+        <iframe
+          title={`${name} live`}
+          src={`${isolatedOrigin()}/screens/${name}.html`}
+          style={{ display: 'block', width: '100%', height: 900, border: '1px solid var(--color-border, #ddd)', borderRadius: 8, background: '#fff' }}
+        />
       )}
       {status.error && <Notice tone="error" title="live 에이전트 오류"><p className="notice-body">{status.error}</p></Notice>}
       {msg && (

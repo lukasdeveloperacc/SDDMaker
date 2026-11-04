@@ -57,6 +57,8 @@ export function ScreenPanel({
   const [feedback, setFeedback] = useState('');
   const [msg, setMsg] = useState<Msg | null>(null);
   const previewBox = useRef<HTMLDivElement>(null);
+  // live가 열려 있으면 위의 live 화면이 작업본이다. 저장된 화면 미리보기는 가져오기 전까지 옛 내용이라 숨긴다.
+  const [liveActive, setLiveActive] = useState(false);
 
   // 링크를 눌러 이 화면으로 왔으면 흐름을 따라가기 좋게 화면을 가운데로 맞춘다.
   useEffect(() => {
@@ -137,7 +139,7 @@ export function ScreenPanel({
       </header>
 
       <DocActions projectId={projectId} doc={doc} disabled={run.running} refresh={refresh} />
-      {doc.status !== 'empty' && <LivePanel projectId={projectId} name={nameOf(path)} refresh={refresh} />}
+      {doc.status !== 'empty' && <LivePanel projectId={projectId} name={nameOf(path)} refresh={refresh} onActiveChange={setLiveActive} />}
 
       {msg && (
         <Notice tone={msg.tone} title={msg.tone === 'error' ? '처리하지 못했습니다' : undefined}>
@@ -169,7 +171,11 @@ export function ScreenPanel({
         </div>
       )}
 
-      {doc.status !== 'empty' && (
+      {doc.status !== 'empty' && liveActive && (
+        <p className="caption">위 live 화면이 작업본입니다. 저장된 화면은 가져오기 전까지 그대로라 숨겼습니다.</p>
+      )}
+
+      {doc.status !== 'empty' && !liveActive && (
         <div className="stack">
           <div className="row">
             {loadInfo?.frame === 'page' && (
