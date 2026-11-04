@@ -5,6 +5,7 @@ import { flagUpstream, getDocument, getProject, listDocuments, tx, updateDocumen
 import { generationPrompt, runDirOf, viewOf } from '@/server/documents';
 import { apiError, gateError, parseId, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
+import { errorFields, log } from '@/lib/log';
 import { acquireRun, batchBusy } from '@/server/runtime';
 
 export const runtime = 'nodejs';
@@ -72,11 +73,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
               flagUpstream(id, laterWithContent(path, listDocuments(id)));
               return true;
             });
-            if (saved) done.push(path);
+            if (saved) { done.push(path); log('info', 'doc_saved', { projectId: id, path, via: 'requirements', agent }); }
           } catch (e) {
             if (signal.aborted) throw e;
             firstError ??= e;
             failed.push({ path, message: e instanceof AgentError ? e.message : '실행 중 문제가 생겼습니다' });
+            log('warn', 'doc_failed', { projectId: id, path, via: 'requirements', agent, ...errorFields(e) });
           } finally {
             active.splice(active.indexOf(path), 1);
             report();

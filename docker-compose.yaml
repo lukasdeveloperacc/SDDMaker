@@ -5,8 +5,10 @@ services:
     init: true
     ports:
       - "127.0.0.1:${SDDMAKER_PORT:-40000}:3000"
-      # impeccable live 보조 서버 (화면에 주입된 live.js가 localhost:8400을 부른다)
-      - "127.0.0.1:48400:8401"
+      # impeccable live 보조 서버. 화면에 주입된 live.js가 localhost:<LIVE_PORT>를 직접 부르므로 호스트 포트와 컨테이너 안 포트가 같아야 한다.
+      - "127.0.0.1:${LIVE_PORT:-48400}:8401"
+    environment:
+      LIVE_PORT: ${LIVE_PORT:-48400}
     volumes:
       - data:/app/data
       - cli-home:/home/node

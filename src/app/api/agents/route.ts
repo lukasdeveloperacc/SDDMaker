@@ -1,4 +1,5 @@
 import { getAdapter } from '@/server/agents';
+import { log } from '@/lib/log';
 import { AGENT_NAMES, type AgentName, type AgentsResponse, type AgentStatus, type GithubStatus } from '@/lib/contract';
 import { json } from '@/server/http';
 import { githubCli } from '@/server/github';
@@ -16,7 +17,7 @@ async function statusOf(agent: AgentName): Promise<AgentStatus> {
     const s = await adapter.status();
     return { ...s, loginCommand, loginRunning: isLoginRunning(agent) };
   } catch (e) {
-    console.error(`agent status failed: ${agent} ${e instanceof Error ? e.name : 'unknown'}`);
+    log('error', 'agent_status_failed', { agent, errorName: e instanceof Error ? e.name : 'unknown' });
     return { installed: false, loggedIn: false, subscription: false, loginCommand, loginRunning: isLoginRunning(agent) };
   }
 }
@@ -28,7 +29,7 @@ async function githubStatusOf(): Promise<GithubStatus> {
     const s = await githubCli.status();
     return { ...s, loginCommand, loginRunning: isLoginRunning('github') };
   } catch (e) {
-    console.error(`agent status failed: github ${e instanceof Error ? e.name : 'unknown'}`);
+    log('error', 'agent_status_failed', { agent: 'github', errorName: e instanceof Error ? e.name : 'unknown' });
     return { installed: false, loggedIn: false, login: null, loginCommand, loginRunning: isLoginRunning('github') };
   }
 }

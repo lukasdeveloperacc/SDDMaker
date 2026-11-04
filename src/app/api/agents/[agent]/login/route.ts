@@ -1,4 +1,5 @@
 import { isLoginTarget, type LoginTarget } from '@/lib/contract';
+import { log } from '@/lib/log';
 import { AgentError } from '@/server/agents/exec';
 import { getAdapter } from '@/server/agents';
 import type { LoginInput } from '@/server/agents/types';
@@ -39,11 +40,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
   if (!body || (body.terminal !== undefined && typeof body.terminal !== 'boolean')) return apiError(400, 'invalid_input', '잘못된 로그인 요청입니다');
   const controller = acquireLogin(agent);
   if (!controller) {
-    console.info('agent_login', { agent, event: 'conflict' });
+    log('info', 'agent_login', { agent, phase: 'conflict' });
     return apiError(409, 'login_running', '이미 로그인이 진행 중입니다');
   }
   const startedAt = Date.now();
-  console.info('agent_login', { agent, event: 'start' });
+  log('info', 'agent_login', { agent, phase: 'start' });
 
   const adapter = adapterFor(agent);
   const sse = createSse(req.signal);
@@ -75,14 +76,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ agent: string 
         releaseLogin(agent, controller);
         const code = e instanceof AgentError && e.code === 'cli_not_found' ? 'cli_not_found' : 'login_failed';
         const message = e instanceof AgentError ? e.message : '로그인에 실패했습니다';
-        console.info('agent_login', { agent, event: controller.signal.aborted ? 'cancel' : 'failed', durationMs: Date.now() - startedAt, code });
+        log('info', 'agent_login', { agent, phase: controller.signal.aborted ? 'cancel' : 'failed', durationMs: Date.now() - startedAt, code });
         sse.send('error', { code, message });
         return;
       }
       // 로그인 명령은 성공했으니 상태 확인 실패로 로그인 실패라고 하지 않는다. 한 번 더 보고 안 되면 미로그인으로 본다.
       const loggedIn = await loggedInAfterLogin(adapter);
       releaseLogin(agent, controller);
-      console.info('agent_login', { agent, event: 'completed', durationMs: Date.now() - startedAt, loggedIn });
+      log('info', 'agent_login', { agent, phase: 'completed', durationMs: Date.now() - startedAt, loggedIn });
       sse.send('done', { loggedIn });
     } finally {
       releaseLogin(agent, controller);

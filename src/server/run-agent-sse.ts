@@ -1,6 +1,7 @@
 import { ensureReady } from './agents';
 import { AgentError } from './agents/exec';
-import { withAgentOptions } from './agents/options';
+import { currentAgentOptions, withAgentOptions } from './agents/options';
+import { errorFields, log } from '@/lib/log';
 import { createSse } from './sse';
 import type { RunHandle } from './runtime';
 import type { AgentName } from '@/lib/contract';
@@ -25,6 +26,9 @@ export function runAgentSse(opts: {
   }
 
   void withAgentOptions(opts.req, opts.agent, async () => {
+    const run = { projectId: handle.projectId, kind: handle.kind, path: handle.path, agent: opts.agent };
+    const startedAt = Date.now();
+    log('info', 'run_start', { ...run, ...currentAgentOptions(), detached: !!opts.detached });
     try {
       handle.controller.signal.throwIfAborted();
       await ensureReady(opts.agent);
@@ -35,9 +39,12 @@ export function runAgentSse(opts: {
       });
       // 잠금을 먼저 푼다: 화면은 done을 받자마자 저장 요청을 보낸다.
       handle.release();
+      log('info', 'run_end', { ...run, outcome: 'done', durationMs: Date.now() - startedAt });
       sse.send('done', { text });
     } catch (e) {
       handle.release();
+      const cancelled = handle.controller.signal.aborted;
+      log(cancelled ? 'info' : 'warn', 'run_end', { ...run, outcome: cancelled ? 'cancelled' : 'error', durationMs: Date.now() - startedAt, ...(cancelled ? {} : errorFields(e)) });
       if (!handle.controller.signal.aborted) {
         if (e instanceof AgentError) sse.send('error', { code: e.code, message: e.message });
         else sse.send('error', { code: 'agent_failed', message: '실행 중 문제가 생겼습니다' });

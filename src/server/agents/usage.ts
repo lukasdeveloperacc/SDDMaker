@@ -1,4 +1,5 @@
 import { AGENT_NAMES, type AgentName, type AgentUsage, type UsageResponse, type UsageWindow } from '@/lib/contract';
+import { log } from '@/lib/log';
 import { claudeAdapter } from './claude';
 import { codexAdapter } from './codex';
 import { spawnCli } from './exec';
@@ -159,7 +160,7 @@ async function usageOf(agent: AgentName): Promise<AgentUsage | null> {
   try {
     s = await adapter.status();
   } catch (e) {
-    console.error(`agent usage failed: ${agent} ${e instanceof Error ? e.name : 'unknown'}`);
+    log('error', 'agent_usage_failed', { agent, errorName: e instanceof Error ? e.name : 'unknown' });
     return null; // 확인에 실패했을 뿐이므로 저장된 Claude 값은 그대로 둔다
   }
   if (!(s.loggedIn && s.subscription)) {

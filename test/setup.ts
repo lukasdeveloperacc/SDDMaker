@@ -9,6 +9,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 파일마다 새 데이터 폴더. 테스트가 실제 데이터를 건드리지 않게 한다.
 process.env.SDDMAKER_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sddmaker-test-'));
 
+// 구조화 로그는 테스트 출력에 섞이지 않게 끈다 (로그를 보는 테스트는 직접 켠다).
+process.env.LOG_LEVEL ??= 'silent';
+
 // 실제 CLI를 부르지 않도록 항상 가짜 실행 파일로 바꾼다.
 process.env.CLAUDE_CLI = path.join(root, 'test/fixtures/fake-claude.mjs');
 process.env.CODEX_CLI = path.join(root, 'test/fixtures/fake-codex.mjs');

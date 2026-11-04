@@ -13,6 +13,9 @@
 - API: `GET·POST·DELETE /api/projects/:id/live`, `POST /api/projects/:id/live/import`. 화면 제공: `GET /screens/:file`(열린 세션만).
 - 화면: 화면 정의서의 live 패널(열기·새 탭·가져오기·다시 시작·종료).
 
+- 화면 정의서 화면의 주석 도구 막대(선택·그리기·이름으로 고르기·전체 HTML 편집)와 주석 목록을 뺐다.
+- 보조 서버 포트는 `LIVE_PORT`(compose 기본 48400)로 고정한다. live.js가 `localhost:<보조 서버 포트>`를 직접 부르므로 호스트 포트와 컨테이너 안 포트가 같아야 한다.
+
 ## 제외 범위
 
 - 여러 프로젝트 동시 세션(포트를 세션마다 나눠야 한다), 앱 안 iframe에서 바로 쓰기(미리보기는 스크립트를 막는다), 변형 슬라이더 값의 앱 저장.

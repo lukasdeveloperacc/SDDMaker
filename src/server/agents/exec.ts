@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { log } from '../../lib/log'; // 테스트 고정 파일이 별칭 없이 이 파일을 불러온다
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { stripVTControlCharacters } from 'node:util';
@@ -123,12 +124,14 @@ export function spawnCli(cli: CliName, args: string[], opts: {
     }
 
     // detached: 자식이 새 프로세스 그룹의 대장이 되어 손자 프로세스를 함께 끌 수 있다.
+    const startedAt = Date.now();
     const child = spawn(cliPath(cli), args, {
       cwd: opts.cwd ?? agentWorkdir(),
       env: childEnv(cli, opts.envOverride),
       stdio: 'pipe',
       detached: true,
     });
+    log('debug', 'cli_start', { cli, pid: child.pid, args });
     let settled = false;
     let stderr = Buffer.alloc(0);
     let lineBuf = '';
@@ -197,6 +200,7 @@ export function spawnCli(cli: CliName, args: string[], opts: {
       const mapped = err.code === 'ENOENT' || err.code === 'EACCES'
         ? new AgentError('cli_not_found', '실행 파일을 찾을 수 없습니다')
         : new AgentError('agent_failed', '실행에 실패했습니다');
+      log('warn', 'cli_error', { cli, errorCode: err.code });
       finish(() => reject(mapped));
     });
 
@@ -213,6 +217,9 @@ export function spawnCli(cli: CliName, args: string[], opts: {
       errLineBuf += errDecoder.end();
       if (errLineBuf && opts.onStderrLine) opts.onStderrLine(errLineBuf);
       errLineBuf = '';
+      // 표준 오류 원문은 남기지 않는다 (로그인 URL·코드가 섞일 수 있다).
+      const outcome = failure ? (failure.name === 'AbortError' ? 'aborted' : failure instanceof RunTimeoutError ? 'timeout' : 'failed') : code === 0 ? 'ok' : 'nonzero';
+      log(outcome === 'ok' || outcome === 'aborted' ? 'debug' : 'warn', 'cli_exit', { cli, pid: child.pid, code, outcome, durationMs: Date.now() - startedAt });
       finish(() => {
         if (failure) reject(failure);
         else resolve({ code, stderr: stderr.toString('utf8') });

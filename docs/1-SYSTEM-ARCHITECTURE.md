@@ -235,6 +235,7 @@ Codex의 Linux read-only sandbox는 Docker 호스트의 namespace·seccomp 정�
 - 실행 잠금은 프로젝트당 하나다. 요구사항 문서 생성만 `acquireSharedRun`으로 같은 잠금을 공유하며 자식 중단 컨트롤러로 동시 3개(`MAX_PARALLEL`)까지 돈다. 잠금·진행·문서·디자인 변경은 `src/server/events.ts`의 프로젝트별 발행으로 `GET /api/projects/:id/events`(SSE)에 흘러 화면이 폴링 없이 상세를 다시 읽는다. 마크다운 생성은 연결이 끊겨도 서버가 끝까지 저장하고(`detached`), 취소는 `DELETE /api/projects/:id/run`만 한다 ([changes/016](changes/016-parallel-requirements.md)).
 - 앞 문서 변경 반영은 `POST /api/projects/:id/sync`다. `requirements` 잠금 하나로 요구사항을 3개씩, 이어서 화면을 3개씩 `generationPrompt`의 피드백(현재 본문 유지, 어긋난 부분만 수정)으로 다시 쓴다. 화면 단계는 방금 갱신한 요구사항 초안을 입력으로 쓰려고 배치 입력 규칙(`batch=true`)을 재사용한다. 서버에는 DOM이 없어 화면 결과는 정리하지 않고 위험한 패턴이면 거절한다 ([changes/017](changes/017-sync-upstream.md)).
 - impeccable live(화면 다듬기)는 문서 생성과 달리 에이전트가 작업 폴더(`data/live/<id>`)에서 셸·파일 도구로 계속 도는 세션이다. 앱 전체에서 하나만 연다. 보조 서버(127.0.0.1:8400)는 앱이 0.0.0.0:8401에서 중계하고 compose가 호스트 127.0.0.1:8400에 연결한다. 결과는 사용자가 가져오기를 눌러야 DB에 들어간다 ([changes/018](changes/018-impeccable-live.md)).
+- 로그는 한 줄 JSON(`{ ts, level, event, ... }`, `src/lib/log.ts`)이다. 바꾸는 API 요청·거절(`http_request`·`http_forbidden`), 에이전트 실행(`run_start`·`run_end`), 문서 저장·동기화·실패(`doc_saved`·`doc_synced`·`doc_failed`), live(`live_start`·`live_agent_exit`·`live_stop`·`live_import`), CLI 실패(`cli_exit`·`cli_error`)를 남긴다. `LOG_LEVEL`(debug·info·warn·error, 기본 info)로 거르고 debug는 CLI 시작·정상 종료도 남긴다. 프롬프트·본문·로그인 코드·CLI 표준 오류 원문은 남기지 않는다.
 
 ## 디자인 단계 구조 (015)
 

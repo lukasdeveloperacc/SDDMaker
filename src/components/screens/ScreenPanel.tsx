@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { docApiPath } from '@/lib/contract';
-import { api, ApiRequestError } from '@/lib/api';
-import { missingScreenLinks, sanitizeHtml, screenLinkTarget } from '@/lib/screens/html';
-import { truncateLabel } from '@/lib/screens/geometry';
-import { useAnnotations } from '@/lib/screens/annotations-store';
+import { api } from '@/lib/api';
+import { missingScreenLinks, screenLinkTarget } from '@/lib/screens/html';
 import { useAgentRun } from '@/lib/use-agent-run';
 import { useAgentChoice } from '@/components/AgentChoice';
 import { DocActions } from '@/components/DocActions';
@@ -14,8 +12,7 @@ import { DESIGN_KEY } from '@/components/StageNav';
 import { ScreenPreview } from '@/components/screens/ScreenPreview';
 import { LivePanel } from '@/components/screens/LivePanel';
 import type { PanelProps } from '@/components/documents/DocumentPanel';
-import { AnnotationPanel, type DrawInfo, type Highlight, type PickInfo } from '@/components/screens/AnnotationPanel';
-import { Button, Modal, Notice, TextArea } from '@/components/ui';
+import { Button, Notice, TextArea } from '@/components/ui';
 
 export interface ScreenPanelProps extends PanelProps {
   trail: string[];
@@ -23,7 +20,6 @@ export interface ScreenPanelProps extends PanelProps {
   onBack: () => void;
 }
 
-type Mode = 'off' | 'select' | 'draw';
 
 type Msg = { tone: 'warn' | 'error'; text: string; items?: string[] };
 
@@ -33,11 +29,6 @@ const REASON_KO: Record<string, string> = {
 
 function nameOf(path: string): string {
   return path.replace(/^screens\//, '').replace(/\.html$/, '');
-}
-
-function errorOf(e: unknown): Msg {
-  if (e instanceof ApiRequestError) return { tone: 'error', text: e.message, items: e.items };
-  return { tone: 'error', text: '요청을 처리하지 못했습니다.' };
 }
 
 export function ScreenPanel({
@@ -58,23 +49,12 @@ export function ScreenPanel({
 
   const agent = useAgentChoice();
   const run = useAgentRun();
-  const [annotations] = useAnnotations(projectId, path);
   const [width, setWidth] = useState<1280 | 390>(1280);
-  const [mode, setMode] = useState<Mode>('off');
-  const [pick, setPick] = useState<PickInfo | null>(null);
-  const [draw, setDraw] = useState<DrawInfo | null>(null);
-  const [highlight, setHighlight] = useState<Highlight>(null);
   const [loadInfo, setLoadInfo] = useState<{
     frame: 'mobile' | 'page';
-    duplicates: string[];
-    unique: string[];
     missing: string[];
   } | null>(null);
   const [feedback, setFeedback] = useState('');
-  // 전체 HTML 편집 창의 내용. null이면 편집 중이 아니다. 닫아도 남아 있으면 "저장 안 한 변경"이다.
-  const [draft, setDraft] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg | null>(null);
   const previewBox = useRef<HTMLDivElement>(null);
 
@@ -87,37 +67,7 @@ export function ScreenPanel({
 
   if (!doc) return <Notice tone="error">문서를 찾지 못했습니다.</Notice>;
 
-  const approved = doc.status === 'approved';
-  const locked = run.running || busy || doc.running;
-  const dirty = draft !== null && draft !== doc.content;
-  const drawings = annotations.flatMap((a) => ('drawing' in a.target && a.points ? [{ points: a.points }] : []));
-  const docUrl = docApiPath(projectId, path);
-
-  function changeMode(next: Mode) {
-    setMode(next);
-    setPick(null);
-    setDraw(null);
-    setHighlight(null);
-  }
-
-  // 키보드용: 미리보기 클릭과 같은 주석 팝업을 연다
-  function pickByName(name: string) {
-    if (!loadInfo || !name) return;
-    const parsed = new DOMParser().parseFromString(doc!.content, 'text/html');
-    const el = Array.from(parsed.querySelectorAll('[data-component]')).find(
-      (e) => e.getAttribute('data-component') === name,
-    );
-    if (!el) return;
-    const duplicates = new Set(loadInfo.duplicates);
-    const parents: string[] = [];
-    let p = el.parentElement?.closest('[data-component]') ?? null;
-    while (p) {
-      const n = p.getAttribute('data-component') ?? '';
-      if (n && !duplicates.has(n)) parents.push(n);
-      p = p.parentElement?.closest('[data-component]') ?? null;
-    }
-    setPick({ component: name, tag: el.localName, text: truncateLabel(el.textContent ?? ''), parents });
-  }
+  const locked = run.running || doc.running;
 
   function onLink(href: string | null) {
     const target = screenLinkTarget(href);
@@ -129,31 +79,8 @@ export function ScreenPanel({
     onLinkNavigate(target);
   }
 
-  // 저장하지 않은 편집이 있으면 먼저 정리해 저장한다. 실패하면 false.
-  async function saveDraft(): Promise<boolean> {
-    if (!dirty || draft === null) return true;
-    setBusy(true);
-    setMsg(null);
-    try {
-      await api('PUT', docUrl, { content: sanitizeHtml(draft) });
-      setDraft(null);
-      await refresh();
-      return true;
-    } catch (e) {
-      setMsg(errorOf(e));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveEdit() {
-    if (await saveDraft()) setEditOpen(false);
-  }
-
   async function generate(feedbackText?: string) {
     setMsg(null);
-    if (!(await saveDraft())) return;
     const body = feedbackText ? { agent, feedback: feedbackText } : { agent };
     // 서버가 끝나는 대로 저장한다 (화면을 떠나도, 다른 화면과 동시에 만들어도 이어진다).
     const r = await run.start(docApiPath(projectId, path, 'generate'), body);
@@ -209,7 +136,7 @@ export function ScreenPanel({
         )}
       </header>
 
-      <DocActions projectId={projectId} doc={doc} disabled={run.running || busy} refresh={refresh} />
+      <DocActions projectId={projectId} doc={doc} disabled={run.running} refresh={refresh} />
       {doc.status !== 'empty' && <LivePanel projectId={projectId} name={nameOf(path)} refresh={refresh} />}
 
       {msg && (
@@ -255,34 +182,6 @@ export function ScreenPanel({
                 </Button>
               </>
             )}
-            <Button variant="utility" disabled={approved} aria-pressed={mode === 'select'} onClick={() => changeMode(mode === 'select' ? 'off' : 'select')}>
-              선택
-            </Button>
-            <Button variant="utility" disabled={approved} aria-pressed={mode === 'draw'} onClick={() => changeMode(mode === 'draw' ? 'off' : 'draw')}>
-              그리기
-            </Button>
-            {!approved && loadInfo && loadInfo.unique.length > 0 && (
-              <select
-                aria-label="컴포넌트를 이름으로 고르기"
-                value=""
-                disabled={locked}
-                onChange={(e) => pickByName(e.target.value)}
-              >
-                <option value="">컴포넌트 이름으로 고르기</option>
-                {loadInfo.unique.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Button variant="utility" disabled={approved || locked} onClick={() => {
-              if (draft === null) setDraft(doc.content);
-              setEditOpen(true);
-            }}>
-              전체 HTML 편집
-            </Button>
-            {dirty && <span className="caption">저장 안 한 변경이 있습니다</span>}
           </div>
 
           {loadInfo && loadInfo.missing.length > 0 && (
@@ -295,56 +194,24 @@ export function ScreenPanel({
               <p className="caption">승인은 막지 않습니다.</p>
             </Notice>
           )}
-          {loadInfo && loadInfo.duplicates.length > 0 && (
-            <Notice tone="warn" title="이름이 겹치는 컴포넌트">
-              <ul className="caption">
-                {loadInfo.duplicates.map((n) => (
-                  <li key={n}>{n} (선택·교체 대상에서 뺌)</li>
-                ))}
-              </ul>
-            </Notice>
-          )}
-          {loadInfo && loadInfo.unique.length === 0 && loadInfo.duplicates.length === 0 && (
-            <Notice tone="warn">
-              <p className="notice-body">고를 컴포넌트가 없습니다. 전체 재생성으로 고치세요.</p>
-            </Notice>
-          )}
 
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div ref={previewBox} style={{ flex: '1 1 390px', minWidth: 0 }}>
               <ScreenPreview
                 html={doc.content}
                 width={width}
-                mode={approved ? 'off' : mode}
-                highlight={highlight}
-                drawings={drawings}
+                mode="off"
+                highlight={null}
+                drawings={[]}
                 onLink={onLink}
-                onPick={(p) => setPick(p)}
-                onDraw={(d) => setDraw(d)}
-                onLoad={({ frame, components, doc: iframeDoc }) =>
+                onPick={() => {}}
+                onDraw={() => {}}
+                onLoad={({ frame, doc: iframeDoc }) =>
                   setLoadInfo({
                     frame,
-                    duplicates: components.duplicates,
-                    unique: components.unique,
                     missing: missingScreenLinks(iframeDoc, screenPaths),
                   })
                 }
-              />
-            </div>
-            <div style={{ flex: '0 1 320px', minWidth: 260 }}>
-              <AnnotationPanel
-                projectId={projectId}
-                path={path}
-                disabled={approved}
-                pick={pick}
-                draw={draw}
-                onClearPick={() => {
-                  setPick(null);
-                  setDraw(null);
-                }}
-                onHighlight={setHighlight}
-                onSent={refresh}
-                html={doc.content}
               />
             </div>
           </div>
@@ -367,29 +234,6 @@ export function ScreenPanel({
         </div>
       )}
 
-      <Modal wide open={editOpen} title="전체 HTML 편집" onClose={() => setEditOpen(false)}>
-        <div className="stack">
-          <TextArea
-            label="화면 HTML"
-            className="editor-input"
-            spellCheck={false}
-            value={draft ?? ''}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <p className="caption">저장할 때 스크립트·외부 삽입 요소·on* 속성·스크립트 링크를 지웁니다.</p>
-          <div className="row">
-            <Button variant="utility" onClick={() => setEditOpen(false)}>
-              닫기
-            </Button>
-            <Button variant="utility" disabled={draft === null} onClick={() => setDraft(null)}>
-              변경 버리기
-            </Button>
-            <Button variant="primary" disabled={locked || !dirty} onClick={() => void saveEdit()}>
-              저장
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

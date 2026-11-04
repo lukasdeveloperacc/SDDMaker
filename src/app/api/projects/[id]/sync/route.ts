@@ -6,6 +6,7 @@ import { flagUpstream, getDocument, getProject, listDocuments, tx, updateDocumen
 import { generationPrompt, runDirOf } from '@/server/documents';
 import { apiError, parseId, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
+import { errorFields, log } from '@/lib/log';
 import { acquireRun, batchBusy } from '@/server/runtime';
 
 export const runtime = 'nodejs';
@@ -77,7 +78,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
               updateDocument(id, path, { upstreamChanged: false });
               return true;
             });
-            if (kept) unchanged.push(path);
+            if (kept) { unchanged.push(path); log('info', 'doc_synced', { projectId: id, path, result: 'unchanged', agent }); }
             else failed.push({ path, message: '그 사이 문서가 바뀌어 확인하지 않았습니다' });
             return;
           }
@@ -92,12 +93,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             if (cur.content !== text) flagUpstream(id, laterWithContent(path, listDocuments(id)));
             return true;
           });
-          if (saved) done.push(path);
+          if (saved) { done.push(path); log('info', 'doc_synced', { projectId: id, path, result: 'updated', agent }); }
           else failed.push({ path, message: '그 사이 문서가 바뀌어 저장하지 않았습니다' });
         } catch (e) {
           if (signal.aborted) throw e;
           firstError ??= e;
           failed.push({ path, message: e instanceof AgentError ? e.message : '실행 중 문제가 생겼습니다' });
+          log('warn', 'doc_failed', { projectId: id, path, via: 'sync', agent, ...errorFields(e) });
         } finally {
           active.splice(active.indexOf(path), 1);
           report();

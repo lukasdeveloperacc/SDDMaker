@@ -8,6 +8,7 @@ import { currentAgentOptions } from './agents/options';
 import { flagUpstream, getDocument, getProject, listDocuments, tx, updateDocument } from './db';
 import { kindOf, laterWithContent } from './doc-rules';
 import { dataDir } from './env';
+import { log } from '@/lib/log';
 
 // impeccable live: 브라우저에서 화면 요소를 골라 변형을 만들고 고르는 모드.
 // 앱이 화면을 작업 폴더로 내보내고, impeccable 보조 서버를 띄우고, 에이전트(Claude·Codex)가 그 폴더에서 이벤트를 받아 파일을 고친다.
@@ -42,6 +43,10 @@ const BASELINE = '.sddmaker-baseline.json';
 
 export function skillDir(): string {
   return process.env.IMPECCABLE_SKILL_DIR || '/opt/impeccable/skills/impeccable';
+}
+
+export function livePort(): number {
+  return Number(process.env.LIVE_PORT || 8400);
 }
 
 export function liveDir(projectId: number): string {
@@ -146,6 +151,7 @@ export function importLive(projectId: number): { saved: string[]; skipped: { pat
     }
   }
   writeBaseline(dir, baseline);
+  log('info', 'live_import', { projectId, saved, skipped: skipped.map((x) => x.path) });
   return { saved, skipped };
 }
 
@@ -210,17 +216,23 @@ export async function startLive(projectId: number, agent: AgentName): Promise<Li
   if (!fs.existsSync(path.join(skillDir(), 'scripts', 'impeccable'))) throw new AgentError('agent_failed', 'impeccable이 설치되어 있지 않습니다');
 
   const dir = prepareWorkspace(projectId);
+  // live.js는 http://localhost:<보조 서버 포트>를 직접 부른다. 브라우저가 닿는 호스트 포트와 같게 먼저 띄운다 (이미 떠 있으면 실패해도 된다, live가 재사용한다).
+  await runImpeccable(dir, ['live-server', '--background', `--port=${livePort()}`]).catch(() => {});
   const boot = JSON.parse(await runImpeccable(dir, ['live'])) as { ok?: boolean; serverPort?: number; error?: string };
   if (!boot.ok || !boot.serverPort) throw new AgentError('agent_failed', `live를 시작하지 못했습니다: ${boot.error ?? '알 수 없는 오류'}`);
   ensureForward(boot.serverPort);
 
   const session: Session = { projectId, agent, dir, startedAt: new Date().toISOString(), abort: new AbortController(), agentRunning: true, error: null };
   g.__sddLive = session;
+  log('info', 'live_start', { projectId, agent, port: boot.serverPort, ...currentAgentOptions() });
   const envOverride = agent === 'claude' ? { BASH_DEFAULT_TIMEOUT_MS: '660000', BASH_MAX_TIMEOUT_MS: '660000' } : undefined;
   spawnCli(agent, agentArgs(agent), { stdin: livePrompt(), cwd: dir, envOverride, signal: session.abort.signal, timeoutMs: AGENT_TIMEOUT_MS })
     .then((r) => { if (r.code !== 0 && session.error === null) session.error = r.stderr.slice(-300) || `에이전트가 코드 ${r.code}로 끝났습니다`; })
     .catch((e: unknown) => { if (!session.abort.signal.aborted) session.error = e instanceof Error ? e.message : String(e); })
-    .finally(() => { session.agentRunning = false; });
+    .finally(() => {
+      session.agentRunning = false;
+      log(session.error ? 'warn' : 'info', 'live_agent_exit', { projectId, agent, aborted: session.abort.signal.aborted, ...(session.error ? { error: session.error.slice(0, 200) } : {}) });
+    });
   return liveStatus(projectId);
 }
 
@@ -230,5 +242,6 @@ export async function stopLive(projectId: number): Promise<void> {
   if (!s || s.projectId !== projectId) return;
   s.abort.abort();
   g.__sddLive = null;
+  log('info', 'live_stop', { projectId });
   await runImpeccable(s.dir, ['live-server', 'stop']).catch(() => {});
 }

@@ -7,6 +7,7 @@ import { flagUpstream, getDocument, listDocuments, tx, updateDocument } from '@/
 import { generationPrompt, resolveDocRef, runDirOf, viewOf } from '@/server/documents';
 import { apiError, gateError, readJson } from '@/server/http';
 import { runAgentSse } from '@/server/run-agent-sse';
+import { log } from '@/lib/log';
 import { acquireRun, acquireSharedRun } from '@/server/runtime';
 
 export const runtime = 'nodejs';
@@ -67,6 +68,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; pa
         });
         if (cur.content !== text) flagUpstream(ref.projectId, laterWithContent(ref.path, listDocuments(ref.projectId)));
       });
+      log('info', 'doc_saved', { projectId: ref.projectId, path: ref.path, via: feedback ? 'feedback' : 'generate', agent, bytes: text.length });
       return text;
     },
   });

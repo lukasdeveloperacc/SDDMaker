@@ -31,6 +31,7 @@ describe('웹 로그인 콘솔', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    process.env.LOG_LEVEL = 'info';
     const { events, loginId, output } = await startCodeLogin();
     expect(output).toContain('https://claude.ai/oauth/fake?x=1');
     expect(output.endsWith('> ')).toBe(true);
@@ -40,9 +41,11 @@ describe('웹 로그인 콘솔', () => {
     expect(rest.at(-1)).toEqual({ event: 'done', data: { loggedIn: true } });
     expect(JSON.stringify(rest)).not.toContain('test-code#state-value');
     expect([...log.mock.calls, ...error.mock.calls, ...info.mock.calls].flat().join(' ')).not.toContain('test-code#state-value');
-    expect(info.mock.calls).toEqual([
-      ['agent_login', { agent: 'claude', event: 'start' }],
-      ['agent_login', { agent: 'claude', event: 'completed', durationMs: expect.any(Number), loggedIn: true }],
+    process.env.LOG_LEVEL = 'silent';
+    const logins = log.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>).filter((l) => l.event === 'agent_login');
+    expect(logins).toEqual([
+      { ts: expect.any(String), level: 'info', event: 'agent_login', agent: 'claude', phase: 'start' },
+      { ts: expect.any(String), level: 'info', event: 'agent_login', agent: 'claude', phase: 'completed', durationMs: expect.any(Number), loggedIn: true },
     ]);
     info.mockRestore();
     log.mockRestore();
