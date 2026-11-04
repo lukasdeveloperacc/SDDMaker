@@ -38,7 +38,19 @@ RUN apt-get update \
     && npm cache clean --force \
     && mkdir -p /app/data/codex-home /app/data/claude-home /app/data/gh-home /app/data/repos /app/data/pr-worktrees \
     && chown -R node:node /app/data
+# impeccable live(화면 요소를 골라 변형을 만드는 모드)용 스킬과 엔진. 커밋과 엔진은 고정하고, 엔진은 스킬의 체크섬 목록으로 검증한다.
+# 홈(/home/node)은 볼륨이라 이미지에 넣은 것이 가려지므로 /opt에 둔다.
+ARG IMPECCABLE_COMMIT=e89e3ada3e875a89ac2c5d33d11e65ebef6fe285
+RUN mkdir -p /opt/impeccable \
+    && curl -fsSL "https://codeload.github.com/pbakaus/impeccable/tar.gz/${IMPECCABLE_COMMIT}" \
+       | tar -xz -C /opt/impeccable --strip-components=2 "impeccable-${IMPECCABLE_COMMIT}/plugin" \
+    && { IMPECCABLE_HOME=/opt/impeccable/engine sh /opt/impeccable/skills/impeccable/scripts/impeccable --help >/dev/null 2>&1 || true; } \
+    && test -x "/opt/impeccable/engine/bin/$(cat /opt/impeccable/skills/impeccable/scripts/VERSION)/impeccable" \
+    && chown -R node:node /opt/impeccable
 ENV NODE_ENV=production \
+    IMPECCABLE_SKILL_DIR=/opt/impeccable/skills/impeccable \
+    IMPECCABLE_HOME=/opt/impeccable/engine \
+    LIVE_PUBLIC_PORT=8401 \
     DISABLE_AUTOUPDATER=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000 \
@@ -51,7 +63,7 @@ COPY --from=build --chown=node:node /app/.next/static ./.next/static
 # Prompts and zip exports read this file at runtime.
 COPY --from=build --chown=node:node /app/docs/AGENTS.md ./docs/AGENTS.md
 USER node
-EXPOSE 3000
+EXPOSE 3000 8401
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["node", "-e", "fetch('http://127.0.0.1:3000/api/projects').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 CMD ["node", "server.js"]

@@ -12,6 +12,7 @@ import { DocActions } from '@/components/DocActions';
 import { RunStatus } from '@/components/RunStatus';
 import { DESIGN_KEY } from '@/components/StageNav';
 import { ScreenPreview } from '@/components/screens/ScreenPreview';
+import { LivePanel } from '@/components/screens/LivePanel';
 import type { PanelProps } from '@/components/documents/DocumentPanel';
 import { AnnotationPanel, type DrawInfo, type Highlight, type PickInfo } from '@/components/screens/AnnotationPanel';
 import { Button, Modal, Notice, TextArea } from '@/components/ui';
@@ -209,6 +210,7 @@ export function ScreenPanel({
       </header>
 
       <DocActions projectId={projectId} doc={doc} disabled={run.running || busy} refresh={refresh} />
+      {doc.status !== 'empty' && <LivePanel projectId={projectId} name={nameOf(path)} refresh={refresh} />}
 
       {msg && (
         <Notice tone={msg.tone} title={msg.tone === 'error' ? '처리하지 못했습니다' : undefined}>
