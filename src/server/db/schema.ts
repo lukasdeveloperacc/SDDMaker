@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS projects (
   idea TEXT NOT NULL,
   design_md TEXT,
   created_at TEXT NOT NULL,
-  repo TEXT
+  repo TEXT,
+  design_html TEXT
 );
 
 CREATE TABLE IF NOT EXISTS interviews (

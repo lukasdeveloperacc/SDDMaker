@@ -12,6 +12,8 @@ docs/
 ├── 0-PRODUCT.md
 ├── 1-SYSTEM-ARCHITECTURE.md
 ├── 2-DESIGN.md
+├── 2-DESIGN.tokens.css       # 2-DESIGN.md 머리말에서 만든 CSS 변수 (있을 때만)
+├── 2-DESIGN.html             # 디자인 시스템 페이지: 토큰·컴포넌트 견본 (있을 때만)
 ├── 3-DATABASE.md
 ├── 4-USERFLOW.md
 ├── requirements/
@@ -57,6 +59,7 @@ docs/
 코딩 에이전트는 화면 파일을 이렇게 읽는다.
 
 - 배치·모양·문구의 기준이다. 색·글꼴·간격은 HTML 값을 베끼지 않고 `2-DESIGN.md`의 토큰으로 구현한다.
+- `2-DESIGN.html`이 있으면 컴포넌트와 상태의 모양은 그 페이지의 견본을 기준으로 구현하고, `2-DESIGN.tokens.css`의 변수 이름을 코드의 토큰 이름으로 쓴다.
 - `data-component` 이름은 구현할 컴포넌트 이름의 후보다.
 - 화면 간 링크는 이동 흐름을 보여 준다. 동작·상태·검증 규칙은 해당 기능 요구사항 문서가 우선한다.
 

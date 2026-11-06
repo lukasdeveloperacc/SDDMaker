@@ -34,6 +34,9 @@ export function getDb(): Database.Database {
   if (!(db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).some((c) => c.name === 'repo')) {
     db.exec('ALTER TABLE projects ADD COLUMN repo TEXT');
   }
+  if (!(db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).some((c) => c.name === 'design_html')) {
+    db.exec('ALTER TABLE projects ADD COLUMN design_html TEXT');
+  }
   globalThis.__sddmakerDb = { file, db };
   return db;
 }
@@ -46,10 +49,10 @@ export function tx<T>(fn: () => T): T {
 const now = () => new Date().toISOString();
 
 interface ProjectRow {
-  id: number; name: string; idea: string; design_md: string | null; created_at: string; repo: string | null;
+  id: number; name: string; idea: string; design_md: string | null; design_html: string | null; created_at: string; repo: string | null;
 }
 function toProject(r: ProjectRow): Project {
-  return { id: r.id, name: r.name, idea: r.idea, designMd: r.design_md, createdAt: r.created_at, repo: r.repo };
+  return { id: r.id, name: r.name, idea: r.idea, designMd: r.design_md, designHtml: r.design_html, createdAt: r.created_at, repo: r.repo };
 }
 
 interface InterviewRow {
@@ -108,6 +111,15 @@ export function getProject(id: number): Project | undefined {
 
 export function setDesign(id: number, designMd: string | null): Project {
   getDb().prepare('UPDATE projects SET design_md = ? WHERE id = ?').run(designMd, id);
+  const p = getProject(id);
+  if (!p) throw new Error(`project ${id} not found`);
+  emitProject(id);
+  return p;
+}
+
+// 디자인 시스템 페이지(2-DESIGN.html). 화면 정의서가 따르는 컴포넌트 견본.
+export function setDesignHtml(id: number, designHtml: string | null): Project {
+  getDb().prepare('UPDATE projects SET design_html = ? WHERE id = ?').run(designHtml, id);
   const p = getProject(id);
   if (!p) throw new Error(`project ${id} not found`);
   emitProject(id);

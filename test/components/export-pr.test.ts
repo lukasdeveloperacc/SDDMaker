@@ -21,7 +21,7 @@ const info = (over: Partial<PrInfoResponse> = {}): PrInfoResponse => ({
 
 function detail(repo: string | null, gateOk = true): ProjectDetail {
   return {
-    project: { id: 7, name: 'p', idea: 'i', designMd: null, createdAt: '', repo },
+    project: { id: 7, name: 'p', idea: 'i', designMd: null, designHtml: null, createdAt: '', repo },
     batch: null,
     repoContext: repo ? { baselineCommit: 'base123', originals: [{ path: 'docs/AGENTS.md', originalText: null, omissionReason: 'instruction_file' }] } : null,
     interview: null,

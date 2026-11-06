@@ -10,7 +10,7 @@ function doc(path: string, over: Partial<DocumentView> = {}): DocumentView {
 }
 function detail(documents: DocumentView[], running: ProjectDetail['running'] = null): ProjectDetail {
   return {
-    project: { id: 9, name: 'p', idea: 'i', designMd: null, createdAt: '', repo: null },
+    project: { id: 9, name: 'p', idea: 'i', designMd: null, designHtml: null, createdAt: '', repo: null },
     batch: null, repoContext: null, interview: null, documents, running,
     exportGate: { ok: false, blocking: [], upstreamChanged: [] },
   };

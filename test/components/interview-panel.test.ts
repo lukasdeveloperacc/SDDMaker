@@ -6,7 +6,7 @@ import { AgentChoice } from '@/components/AgentChoice';
 import { InterviewPanel, interviewPhase } from '@/components/InterviewPanel';
 import type { InterviewMessage, ProjectDetail } from '@/lib/contract';
 
-const detail: ProjectDetail = { project: { id: 5, name: 'p', idea: 'i', designMd: null, createdAt: '', repo: 'owner/repo' }, batch: { state: 'running', currentPath: '0-PRODUCT.md', completedPaths: [], remainingPaths: ['0-PRODUCT.md'], error: null, reviewToken: 'x' }, repoContext: null, interview: null, documents: [], running: { kind: 'batch', path: null }, exportGate: { ok: false, blocking: [], upstreamChanged: [] } };
+const detail: ProjectDetail = { project: { id: 5, name: 'p', idea: 'i', designMd: null, designHtml: null, createdAt: '', repo: 'owner/repo' }, batch: { state: 'running', currentPath: '0-PRODUCT.md', completedPaths: [], remainingPaths: ['0-PRODUCT.md'], error: null, reviewToken: 'x' }, repoContext: null, interview: null, documents: [], running: { kind: 'batch', path: null }, exportGate: { ok: false, blocking: [], upstreamChanged: [] } };
 let host: HTMLDivElement; let root: Root;
 beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });

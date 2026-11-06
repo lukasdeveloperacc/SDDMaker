@@ -21,6 +21,7 @@ function ready(rawId: string): { projectId: number; repo: string; files: PrFile[
   try {
     const files = exportFiles({
       designMd: detail.project.designMd,
+      designHtml: detail.project.designHtml,
       docs: detail.documents.map((d) => ({ path: d.path, content: d.content })),
       rules: readDocRules(),
       originalRules: readOriginalRules(detail.project.id),

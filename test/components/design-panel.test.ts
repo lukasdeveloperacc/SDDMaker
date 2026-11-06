@@ -14,7 +14,7 @@ const screen = (name: string, over: Partial<DocumentView> = {}) => doc(`screens/
 
 function detail(designMd: string | null, documents: DocumentView[], over: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
-    project: { id: 3, name: 'p', idea: 'i', designMd, createdAt: '', repo: null },
+    project: { id: 3, name: 'p', idea: 'i', designMd, designHtml: null, createdAt: '', repo: null },
     batch: null, repoContext: null, interview: null, documents, running: null,
     exportGate: { ok: false, blocking: [], upstreamChanged: [] }, ...over,
   };
@@ -146,5 +146,34 @@ describe('DesignPanel', () => {
     await render(detail('# 저장본', [req(), screen('detail', { status: 'approved', content: '<html></html>' }), screen('home')]));
     await click(button('화면 정의서로 이동')!);
     expect(onNavigate).toHaveBeenLastCalledWith('screens/home.html'); // 승인 안 된 첫 화면
+  });
+
+  it('디자인 문서를 저장하면 디자인 시스템 페이지를 만들고 토큰 CSS를 보여 준다', async () => {
+    fetchMock.mockResolvedValueOnce(sse('<html></html>'));
+    await render(detail('---\ncolors:\n  primary: "#2285E8"\n---\n# 저장본', [req(), screen('home')]));
+    expect(host.textContent).toContain('토큰 CSS · 1개');
+    await click(button('디자인 시스템 페이지 생성')!);
+    await flush();
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/projects/3/design/system');
+    expect(bodyOf(0)).toEqual({ agent: 'claude' });
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('페이지가 있으면 미리보기와 피드백 재생성을 보여 준다', async () => {
+    const d = detail('# 저장본', [req(), screen('home')]);
+    d.project.designHtml = '<html><body><button>저장</button></body></html>';
+    await render(d);
+    await flush();
+    expect(host.querySelector('iframe[title="디자인 시스템 페이지"]')?.getAttribute('sandbox')).toBe('');
+    await type(area('페이지 피드백 (선택)'), '버튼을 키운다');
+    fetchMock.mockResolvedValueOnce(sse('<html></html>'));
+    await click(button('피드백 반영해 다시 생성')!);
+    await flush();
+    expect(bodyOf(0)).toEqual({ agent: 'claude', feedback: '버튼을 키운다' });
+  });
+
+  it('디자인 문서가 없으면 디자인 시스템 페이지 영역이 없다', async () => {
+    await render(detail(null, [req(), screen('home')]));
+    expect(button('디자인 시스템 페이지 생성')).toBeUndefined();
   });
 });

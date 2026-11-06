@@ -18,7 +18,7 @@ import { getRun } from '@/server/runtime';
 import { apiError, parseId } from '@/server/http';
 import { repoDir } from '@/server/env';
 import { AgentError } from './agents/exec';
-import { buildDesignPrompt, buildDocumentPrompt, repoEvidencePrompt } from './prompts';
+import { buildDesignPrompt, buildDesignSystemPrompt, buildDocumentPrompt, repoEvidencePrompt } from './prompts';
 import { readRepoContext } from './repo-context';
 import { batchView } from './batch';
 import {
@@ -134,6 +134,19 @@ export function designPrompt(projectId: number, base: string | null, feedback?: 
   });
 }
 
+// 디자인 시스템 페이지 프롬프트. 저장된 디자인 문서가 있어야 부른다. feedback이 있으면 현재 페이지를 함께 넣는다.
+export function designSystemPrompt(projectId: number, feedback?: string): string {
+  const project = getProject(projectId);
+  if (!project?.designMd) throw new Error(`project ${projectId} has no design doc`);
+  return buildDesignSystemPrompt({
+    idea: project.idea,
+    designMd: project.designMd,
+    inputDocs: designInputDocs(listDocuments(projectId)),
+    ...(feedback !== undefined && project.designHtml ? { current: project.designHtml, feedback } : {}),
+    repo: project.repo,
+  });
+}
+
 // 생성 프롬프트 조립. feedback이 있으면 현재 본문을 함께 넣는다.
 export function generationPrompt(projectId: number, path: string, feedback?: string, batch = false): string {
   const project = getProject(projectId);
@@ -153,6 +166,7 @@ export function generationPrompt(projectId: number, path: string, feedback?: str
     idea: project.idea,
     summary: rec?.status === 'approved' ? rec.summary : null,
     designMd: project.designMd,
+    designHtml: project.designHtml,
     inputDocs: batch ? batchInputDocsFor(path, docs) : inputDocsFor(path, docs),
     screenNames: screens.map((p) => nameOf(p)),
     screenFiles: screens,

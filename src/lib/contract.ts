@@ -36,7 +36,7 @@ export interface ApiError { code: HttpErrorCode; message: string; items?: string
 
 export type Gate = { ok: true } | { ok: false; code: HttpErrorCode; reason: string; items?: string[] };
 
-export interface Project { id: number; name: string; idea: string; designMd: string | null; createdAt: string; repo: string | null } // repo: 'owner/repo'
+export interface Project { id: number; name: string; idea: string; designMd: string | null; designHtml: string | null; createdAt: string; repo: string | null } // repo: 'owner/repo'
 export interface ProjectSummary {
   id: number; name: string; createdAt: string;
   interviewStatus: InterviewStatus | null;

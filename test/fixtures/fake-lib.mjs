@@ -103,6 +103,9 @@ export function answerFor(prompt) {
   if (path.startsWith('screens/') && path.endsWith('.html')) {
     return screenHtml(path.slice('screens/'.length));
   }
+  if (path === '2-DESIGN.html') {
+    return '```html\n<!DOCTYPE html><html data-frame="page"><body><button data-component="button-primary">저장</button></body></html>\n```';
+  }
   return withFence(`# ${path}\n\n> 상태: 예정\n\n본문`);
 }
 

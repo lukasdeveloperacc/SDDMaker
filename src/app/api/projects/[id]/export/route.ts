@@ -20,6 +20,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     bytes = await buildExportZip({
       designMd: detail.project.designMd,
+      designHtml: detail.project.designHtml,
       docs: detail.documents.map((d) => ({ path: d.path, content: d.content })),
       rules: readDocRules(),
       originalRules: detail.project.repo ? readOriginalRules(detail.project.id) : null,

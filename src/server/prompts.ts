@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import type { Annotation, InterviewMessage, RepoContext } from '@/lib/contract';
 import { BASELINE_DOC, CHANGE_DOC } from '@/lib/contract';
+import { designTokensCss, projectTokensCss } from '@/lib/design-tokens';
 import { docRulesFile } from './env';
 
 // 문서 규칙은 호출할 때마다 파일에서 읽는다 (사본을 두지 않는다).
@@ -71,6 +72,7 @@ function docInstruction(i: { path: string; screenNames: string[]; repo?: { name:
 
 export function buildDocumentPrompt(i: {
   path: string; idea: string; summary: string | null; designMd: string | null;
+  designHtml?: string | null; // 디자인 시스템 페이지 (화면 생성에서만 쓴다)
   inputDocs: { path: string; content: string; status?: string }[]; screenNames: string[]; screenFiles: string[];
   current?: string; feedback?: string;
   anchor?: { path: string; content: string }; // 이미 승인된 다른 화면 (화면 생성에서만)
@@ -104,6 +106,7 @@ export function buildDocumentPrompt(i: {
   if (i.path === BASELINE_DOC) out.push('', '현재 구현·근거·확인 필요를 기록하며 미래 로드맵을 지어내지 않는다.');
   if (i.summary) out.push('', '## 인터뷰 요약', i.summary);
   if (i.designMd && i.designMd.trim() !== '') out.push('', '## 디자인 문서', i.designMd);
+  if (isScreen) out.push(...designReference(i.designMd, i.designHtml ?? null));
   if (i.anchor) {
     out.push(
       '', `## 기준 화면 (${i.anchor.path}, 승인됨)`,
@@ -172,6 +175,74 @@ export function buildDesignPrompt(i: {
   out.push('', '## 승인된 앞 문서');
   if (i.inputDocs.length === 0) out.push('(없음)');
   for (const d of i.inputDocs) out.push('', `### ${d.path}`, d.content);
+  if (i.feedback !== undefined) out.push('', '## 피드백', i.feedback);
+  return out.join('\n') + '\n';
+}
+
+// 화면이 쓰는 토큰 CSS와 디자인 시스템 페이지. 둘 다 없으면 아무것도 넣지 않는다.
+function designReference(designMd: string | null, designHtml: string | null): string[] {
+  const out: string[] = [];
+  const tokens = projectTokensCss(designMd, designHtml);
+  if (tokens) {
+    out.push(
+      '', '## 디자인 토큰 CSS',
+      '`<style>` 맨 앞에 아래 `:root` 블록을 그대로 넣는다. 색·글꼴·간격·모서리·그림자는 값을 다시 쓰지 않고 `var(--…)`로 쓴다.',
+      '```css', tokens.trimEnd(), '```',
+    );
+  }
+  if (designHtml && designHtml.trim() !== '') {
+    out.push(
+      '', '## 디자인 시스템 페이지 (2-DESIGN.html)',
+      '컴포넌트는 이 페이지에 있는 같은 종류의 견본(마크업·클래스·스타일)을 그대로 가져다 쓴다. 페이지에 없는 컴포넌트만 같은 토큰으로 새로 만든다. 견본을 늘어놓은 배치와 설명 글은 가져오지 않는다.',
+      designHtml,
+    );
+  }
+  return out;
+}
+
+// 디자인 시스템 페이지(2-DESIGN.html) 생성. 디자인 문서를 눈으로 보는 견본 페이지이고, 화면 정의서가 이 견본을 가져다 쓴다.
+export function buildDesignSystemPrompt(i: {
+  idea: string; designMd: string; inputDocs: { path: string; content: string }[];
+  current?: string; feedback?: string; repo?: string | null;
+}): string {
+  const tokens = designTokensCss(i.designMd);
+  const out: string[] = [
+    '대상 문서: 2-DESIGN.html',
+    '',
+    ...repoHeader(i.repo),
+    '디자인 문서(2-DESIGN.md)를 눈으로 확인하는 디자인 시스템 페이지를 HTML 파일 하나로 만든다. 이후 모든 화면 정의서가 이 페이지의 컴포넌트 견본을 그대로 가져다 쓴다.',
+    '',
+    '## 페이지 구성',
+    '1. 기초: 색(견본·이름·값·쓰임), 글꼴 단계(실제 글자로), 간격, 모서리, 그림자, 움직임(문서에 있으면).',
+    '2. 컴포넌트: 디자인 문서와 요구사항에 나오는 컴포넌트마다 해당하는 상태(기본·호버·포커스·비활성·오류·빈 상태)를 나란히 보여 준다. 호버·포커스 견본은 상태 클래스로 그 모양을 직접 입혀 보여 준다.',
+    '3. 패턴: 요구사항에 나오는 폼·목록·표·대화상자·알림·빈 화면·오류 화면을 컴포넌트를 조합한 예시로 보여 준다.',
+    '',
+    '## 규칙',
+    '- 스크립트와 외부 파일을 넣지 않는다. 글꼴·이미지도 외부에서 불러오지 않는다 (대체 글꼴 목록만 쓴다).',
+    tokens
+      ? '- `<style>` 맨 앞에 아래 토큰 CSS의 `:root` 블록을 그대로 넣고, 색·글꼴·간격·모서리·그림자는 값을 다시 쓰지 않고 `var(--…)`로 쓴다.'
+      : '- `<style>` 맨 앞에 디자인 문서의 색·글꼴 단계·간격·모서리·그림자 값을 모두 `:root` CSS 변수(`--color-primary` 같은 이름)로 정의하고, 그 뒤로는 값을 다시 쓰지 않고 `var(--…)`로만 쓴다. 이 `:root` 블록이 이후 모든 화면의 토큰이 된다.',
+    '- 컴포넌트 모양은 클래스로 정의해 화면에서 마크업과 스타일을 그대로 복사해 쓸 수 있게 한다. 상태는 `:hover`·`:focus-visible`과 같은 모양의 상태 클래스(`.is-hover` 등)를 함께 정의한다.',
+    '- 견본마다 파일 안에서 유일한 `data-component="<이름>"`을 붙인다 (영문 소문자·숫자·`-`).',
+    '- `<html data-frame="page">`로 쓴다.',
+    '- 견본 글은 요구사항의 실제 문구를 쓴다. 모르는 값은 `[이름]`처럼 자리표시로 둔다. 제품 사실을 지어내지 않는다.',
+    '- 실제 요소를 쓴다 (누르는 것은 `<button>`·`<a href>`, 입력은 `<input>`과 `<label>`). 글자 대비는 4.5:1 이상.',
+    '- 디자인 문서에 없는 장식(배경 그라데이션, 이모지 아이콘, 왼쪽 굵은 테두리 카드)을 넣지 않는다.',
+    ...(i.feedback !== undefined ? ['- 피드백을 반영해 현재 페이지 전체를 다시 쓴다. 피드백과 상관없는 부분은 그대로 둔다.'] : []),
+    '- 출력은 ```html 블록 하나만 쓴다.',
+    ...(i.repo ? REPO_GUARD : []),
+    '',
+    '## 아이디어',
+    ideaText(i.idea, i.repo),
+    '',
+    '## 디자인 문서',
+    i.designMd,
+  ];
+  if (tokens) out.push('', '## 디자인 토큰 CSS', '```css', tokens.trimEnd(), '```');
+  out.push('', '## 승인된 앞 문서');
+  if (i.inputDocs.length === 0) out.push('(없음)');
+  for (const d of i.inputDocs) out.push('', `### ${d.path}`, d.content);
+  if (i.current !== undefined) out.push('', '## 현재 페이지', i.current);
   if (i.feedback !== undefined) out.push('', '## 피드백', i.feedback);
   return out.join('\n') + '\n';
 }

@@ -11,7 +11,7 @@ function doc(path: string, over: Partial<DocumentView> = {}): DocumentView {
 }
 function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
-    project: { id: 9, name: 'repo', idea: 'idea', designMd: null, createdAt: '', repo: 'owner/repo' },
+    project: { id: 9, name: 'repo', idea: 'idea', designMd: null, designHtml: null, createdAt: '', repo: 'owner/repo' },
     batch: { state: 'partial', currentPath: null, completedPaths: ['0-PRODUCT.md'], remainingPaths: ['1-SYSTEM-ARCHITECTURE.md'], error: null, reviewToken: 'review1' },
     repoContext: null, interview: { status: 'skipped', agent: null, hasSession: false, summary: null, messages: [] }, documents: [doc('0-PRODUCT.md')], running: null,
     exportGate: { ok: false, blocking: [], upstreamChanged: [] }, ...over,

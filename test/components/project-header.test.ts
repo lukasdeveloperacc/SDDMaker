@@ -7,7 +7,7 @@ import { RunSettings } from '@/components/RunSettings';
 import { beginRun } from '@/lib/run-activity';
 import type { AgentName } from '@/lib/contract';
 
-const project = { id: 3, name: '미팅노트', idea: '첫 줄\n\n둘째 줄', designMd: null, createdAt: '', repo: 'lukasdeveloperacc/MeetingNote' };
+const project = { id: 3, name: '미팅노트', idea: '첫 줄\n\n둘째 줄', designMd: null, designHtml: null, createdAt: '', repo: 'lukasdeveloperacc/MeetingNote' };
 let host: HTMLDivElement; let root: Root;
 const onAgentChange = vi.fn();
 
