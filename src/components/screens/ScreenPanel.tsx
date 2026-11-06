@@ -67,6 +67,21 @@ export function ScreenPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 화면을 슬라이드처럼 넘긴다: 이전·다음 버튼과 ←/→ 키 (입력 칸에 있을 때는 넘기지 않는다).
+  const at = screenPaths.indexOf(path);
+  const prev = at > 0 ? screenPaths[at - 1] : null;
+  const next = at >= 0 && at < screenPaths.length - 1 ? screenPaths[at + 1] : null;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      if (e.altKey || e.ctrlKey || e.metaKey || (t instanceof Element && t.closest('input, textarea, select, [contenteditable="true"]'))) return;
+      const to = e.key === 'ArrowLeft' ? prev : e.key === 'ArrowRight' ? next : null;
+      if (to) { e.preventDefault(); onNavigate(to); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [prev, next, onNavigate]);
+
   if (!doc) return <Notice tone="error">문서를 찾지 못했습니다.</Notice>;
 
   const locked = run.running || doc.running;
@@ -126,7 +141,12 @@ export function ScreenPanel({
   return (
     <div className="stack">
       <header className="stack">
-        <h2 className="title">{nameOf(path)}</h2>
+        <div className="row" role="group" aria-label="화면 넘기기">
+          <Button variant="utility" disabled={!prev} onClick={() => prev && onNavigate(prev)} aria-label="이전 화면">‹</Button>
+          <h2 className="title">{nameOf(path)}</h2>
+          <span className="caption">{at + 1} / {screenPaths.length}</span>
+          <Button variant="utility" disabled={!next} onClick={() => next && onNavigate(next)} aria-label="다음 화면">›</Button>
+        </div>
         <p className="caption">{path}</p>
         {trail.length > 0 && (
           <div className="row">

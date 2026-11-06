@@ -87,11 +87,7 @@ export function LivePanel({ projectId, name, refresh, onActiveChange }: {
           <Button variant="secondary" disabled={busy || status.otherProject !== null} onClick={() => void start()}>
             impeccable live로 다듬기
           </Button>
-          <span className="caption">
-            {status.otherProject !== null
-              ? `프로젝트 ${status.otherProject}에서 live가 열려 있습니다.`
-              : '여기서(또는 새 탭에서) 요소를 눌러 변형 3개를 만들고 골라 적용합니다.'}
-          </span>
+          {status.otherProject !== null && <span className="caption">{`프로젝트 ${status.otherProject}에서 live가 열려 있습니다.`}</span>}
           {changed > 0 && <Button variant="primary" disabled={busy} onClick={() => void importAll()}>가져오기 · {changed}개</Button>}
         </div>
       ) : (
