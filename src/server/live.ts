@@ -38,7 +38,8 @@ interface Session {
 const g = globalThis as { __sddLive?: Session | null; __sddLiveForward?: net.Server };
 const AGENT_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 const INJECT = /\s*<!--\s*impeccable-live-start\s*-->[\s\S]*?<!--\s*impeccable-live-end\s*-->|\s*<script[^>]*\/live\.js[^>]*>\s*<\/script>/gi;
-const LEFTOVER = /impeccable-(variants|carbonize)|data-impeccable-/i;
+const CHOOSING = /impeccable-variants/i; // 변형을 아직 고르는 중
+const LEFTOVER = /impeccable-carbonize|data-impeccable-/i; // Accept는 했고 에이전트의 정리(carbonize)가 남음
 const BASELINE = '.sddmaker-baseline.json';
 
 export function skillDir(): string {
@@ -137,7 +138,8 @@ export function importLive(projectId: number): { saved: string[]; skipped: { pat
     const html = strip(readScreen(dir, p) ?? '').trim() + '\n';
     const cur = getDocument(projectId, p);
     if (!cur) skipped.push({ path: p, reason: '프로젝트에 없는 화면입니다' });
-    else if (LEFTOVER.test(html)) skipped.push({ path: p, reason: '변형을 고르는 중입니다. 브라우저에서 Accept나 Discard를 마친 뒤 가져오세요' });
+    else if (CHOOSING.test(html)) skipped.push({ path: p, reason: '변형을 고르는 중입니다. 브라우저에서 Accept나 Discard를 마친 뒤 가져오세요' });
+    else if (LEFTOVER.test(html)) skipped.push({ path: p, reason: cleanupReason(projectId) });
     else if (/<script/i.test(html)) skipped.push({ path: p, reason: '스크립트가 들어 있어 가져오지 않았습니다' });
     else if (!same(cur.content, baseline[p])) skipped.push({ path: p, reason: '내보낸 뒤 앱에서 화면이 바뀌었습니다 (덮어쓰지 않음)' });
     else if (cur.status === 'approved') skipped.push({ path: p, reason: '승인된 화면입니다. 승인을 취소한 뒤 가져오세요' });
@@ -153,6 +155,12 @@ export function importLive(projectId: number): { saved: string[]; skipped: { pat
   writeBaseline(dir, baseline);
   log('info', 'live_import', { projectId, saved, skipped: skipped.map((x) => x.path) });
   return { saved, skipped };
+}
+
+function cleanupReason(projectId: number): string {
+  return liveStatus(projectId).agentRunning
+    ? 'Accept한 변형을 에이전트가 화면에 정리하는 중입니다. 잠시 뒤 다시 가져오세요'
+    : 'Accept한 변형의 정리가 끝나기 전에 live가 꺼졌습니다. live를 다시 켜면 에이전트가 정리를 마칩니다';
 }
 
 function runImpeccable(dir: string, args: string[]): Promise<string> {
@@ -186,6 +194,7 @@ export function livePrompt(): string {
     `You are running impeccable live mode in the current folder (a static multi-page HTML project). The impeccable skill lives at ${skill}.`,
     `First read ${skill}/SKILL.md and ${skill}/reference/live.md, then follow live.md exactly, replacing <skill-base-dir> with ${skill}.`,
     `Live is already booted: \`impeccable live\` ran, the helper is up, and screens/*.html already load live.js. Start directly at the poll loop: run "${skill}/scripts/impeccable" live-poll in the foreground (no background task, no --timeout).`,
+    `Before the first poll, run "${skill}/scripts/impeccable" live-status. If an accepted variant still owes carbonize cleanup (or any screens/*.html still has an impeccable-carbonize-start block), finish the cleanup per live.md "Required after accept" and run live-complete first.`,
     'Handle every event per its _instructions, then poll again immediately. Never end your turn while live mode is open, and never announce that you are waiting.',
     'The screens are screens/<name>.html; links like login.html go to screens/login.html. Keep each screen one self-contained HTML file: no <script>, no external assets, no on* attributes. Edit nothing outside this folder.',
     'This app owns the session lifetime: an "exit" event only means the page or tab was closed (the user may reopen it or open another view). Do NOT run the cleanup on "exit"; just poll again. Keep polling until you are stopped from outside.',

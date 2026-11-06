@@ -70,7 +70,7 @@ export function LivePanel({ projectId, name, refresh, onActiveChange }: {
     const r = await api<{ saved: string[]; skipped: { path: string; reason: string }[] }>('POST', `${url}/import`);
     setMsg({
       tone: r.skipped.length > 0 ? 'warn' : 'info',
-      text: `${r.saved.length}개 화면을 가져왔습니다.${r.skipped.length > 0 ? ' 일부는 가져오지 못했습니다.' : ''}`,
+      text: r.saved.length > 0 ? `${r.saved.length}개 화면을 가져왔습니다.` : '가져온 화면이 없습니다.',
       items: r.skipped.map((s) => `${s.path}: ${s.reason}`),
     });
     await refresh();

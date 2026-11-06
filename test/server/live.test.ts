@@ -67,8 +67,10 @@ describe('impeccable live 작업 폴더', () => {
   it('변형을 고르는 중이거나 스크립트가 든 화면은 가져오지 않는다', () => {
     const p = project();
     prepareWorkspace(p.id);
-    fs.writeFileSync(file(p.id, 'screens/a.html'), A.replace('<h1>A</h1>', '<div data-impeccable-variant="1"><h1>v</h1></div>'));
-    expect(importLive(p.id).skipped[0].reason).toContain('Accept');
+    fs.writeFileSync(file(p.id, 'screens/a.html'), A.replace('<h1>A</h1>', '<!-- impeccable-variants-start x --><div data-impeccable-variant="1"><h1>v</h1></div>'));
+    expect(importLive(p.id).skipped[0].reason).toContain('변형을 고르는 중');
+    fs.writeFileSync(file(p.id, 'screens/a.html'), A.replace('<h1>A</h1>', '<!-- impeccable-carbonize-start x --><style data-impeccable-css="x"></style><!-- impeccable-carbonize-end x --><h1>v</h1>'));
+    expect(importLive(p.id).skipped[0].reason).toContain('live를 다시 켜면'); // Accept 뒤 정리 전에 꺼진 경우
     fs.writeFileSync(file(p.id, 'screens/a.html'), A.replace('<h1>A</h1>', '<script>x()</script>'));
     expect(importLive(p.id).skipped[0].reason).toContain('스크립트');
     expect(getDocument(p.id, 'screens/a.html')!.content).toBe(A);
